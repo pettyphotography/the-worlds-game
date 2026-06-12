@@ -614,7 +614,28 @@ function ResultsTab({ liveScores, scores, lastUpdated }) {
 
   const inPlay = allMatches.filter(m=>m.live.status==="IN_PLAY"||m.live.status==="PAUSED");
   const finished = allMatches.filter(m=>m.live.status==="FINISHED");
-  const upcoming = allMatches.filter(m=>m.live.status==="SCHEDULED"||m.live.status==="TIMED");
+  const upcoming = allMatches
+    .filter(m=>m.live.status==="SCHEDULED"||m.live.status==="TIMED")
+    .filter(m=>m.live.utcDate)
+    .sort((a,b)=>new Date(a.live.utcDate)-new Date(b.live.utcDate));
+
+  // Group upcoming matches by ADT (Atlantic Daylight Time, UTC-3) calendar date
+  const ADT_TZ = "America/Halifax";
+  const dayFormatter = new Intl.DateTimeFormat("en-US", { timeZone:ADT_TZ, weekday:"long", month:"long", day:"numeric" });
+  const timeFormatter = new Intl.DateTimeFormat("en-US", { timeZone:ADT_TZ, hour:"numeric", minute:"2-digit" });
+  const dateKeyFormatter = new Intl.DateTimeFormat("en-CA", { timeZone:ADT_TZ, year:"numeric", month:"2-digit", day:"2-digit" });
+
+  const upcomingByDay = [];
+  upcoming.forEach(m => {
+    const d = new Date(m.live.utcDate);
+    const dayKey = dateKeyFormatter.format(d);
+    let group = upcomingByDay.find(g=>g.dayKey===dayKey);
+    if (!group) {
+      group = { dayKey, label: dayFormatter.format(d), matches: [] };
+      upcomingByDay.push(group);
+    }
+    group.matches.push({ ...m, kickoff: timeFormatter.format(d) });
+  });
 
   const MatchCard = ({ m }) => {
     const result = scoreResult(m.user, m.live);
@@ -635,6 +656,7 @@ function ResultsTab({ liveScores, scores, lastUpdated }) {
                 {m.live.home !== null ? `${m.live.home} : ${m.live.away}` : "vs"}
               </div>
               {m.live.status==="FINISHED"&&<div style={{ fontSize:8,color:C.muted,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>FT</div>}
+              {m.kickoff&&<div style={{ fontSize:8,color:C.muted,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>{m.kickoff} ADT</div>}
             </div>
             <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1 }}>
               <Flag team={m.away} size={14} />{m.away}
@@ -690,12 +712,17 @@ function ResultsTab({ liveScores, scores, lastUpdated }) {
         </div>
       )}
 
-      {upcoming.length > 0 && (
+      {upcomingByDay.length > 0 && (
         <div>
           <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,color:C.muted,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:12 }}>Upcoming</div>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
-            {upcoming.map(m=><MatchCard key={m.key} m={m} />)}
-          </div>
+          {upcomingByDay.map(group => (
+            <div key={group.dayKey} style={{ marginBottom:20 }}>
+              <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.gold,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8 }}>{group.label}</div>
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
+                {group.matches.map(m=><MatchCard key={m.key} m={m} />)}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
