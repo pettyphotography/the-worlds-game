@@ -614,7 +614,7 @@ function ResultsTab({ liveScores, scores, lastUpdated }) {
 
   const inPlay = allMatches.filter(m=>m.live.status==="IN_PLAY"||m.live.status==="PAUSED");
   const finished = allMatches.filter(m=>m.live.status==="FINISHED");
-  const upcoming = allMatches.filter(m=>m.live.status==="SCHEDULED");
+  const upcoming = allMatches.filter(m=>m.live.status==="SCHEDULED"||m.live.status==="TIMED");
 
   const MatchCard = ({ m }) => {
     const result = scoreResult(m.user, m.live);
