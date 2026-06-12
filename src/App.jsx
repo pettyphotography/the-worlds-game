@@ -30,13 +30,13 @@ const TEAM_FLAGS = {
 // Map API team names to our app team names
 const API_NAME_MAP = {
   "Mexico":"Mexico","South Africa":"South Africa","Korea Republic":"South Korea","Czechia":"Czechia",
-  "Canada":"Canada","Bosnia and Herzegovina":"Bosnia & Herzegovina","Qatar":"Qatar","Switzerland":"Switzerland",
+  "Canada":"Canada","Bosnia and Herzegovina":"Bosnia & Herzegovina","Bosnia-Herzegovina":"Bosnia & Herzegovina","Qatar":"Qatar","Switzerland":"Switzerland",
   "Brazil":"Brazil","Morocco":"Morocco","Haiti":"Haiti","Scotland":"Scotland",
   "USA":"United States","United States":"United States","Paraguay":"Paraguay","Australia":"Australia","Türkiye":"Turkiye","Turkey":"Turkiye",
   "Germany":"Germany","Curaçao":"Curacao","Curacao":"Curacao","Côte d'Ivoire":"Cote d'Ivoire","Ivory Coast":"Cote d'Ivoire","Ecuador":"Ecuador",
   "Netherlands":"Netherlands","Japan":"Japan","Sweden":"Sweden","Tunisia":"Tunisia",
   "Belgium":"Belgium","Egypt":"Egypt","IR Iran":"Iran","Iran":"Iran","New Zealand":"New Zealand",
-  "Spain":"Spain","Cape Verde":"Cabo Verde","Saudi Arabia":"Saudi Arabia","Uruguay":"Uruguay",
+  "Spain":"Spain","Cape Verde":"Cabo Verde","Cape Verde Islands":"Cabo Verde","Saudi Arabia":"Saudi Arabia","Uruguay":"Uruguay",
   "France":"France","Senegal":"Senegal","Iraq":"Iraq","Norway":"Norway",
   "Argentina":"Argentina","Algeria":"Algeria","Austria":"Austria","Jordan":"Jordan",
   "Portugal":"Portugal","DR Congo":"Congo DR","Uzbekistan":"Uzbekistan","Colombia":"Colombia",
