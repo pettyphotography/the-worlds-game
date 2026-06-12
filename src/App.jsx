@@ -2111,7 +2111,20 @@ export default function App() {
 
           {userName&&tab==="groups"&&(
             <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20 }}>
-              <div style={{ fontSize:11,color:C.muted,fontFamily:"'Quicksand',sans-serif" }}>Signed in as <span style={{ color:C.green,fontWeight:700 }}>{userName}</span></div>
+              <div style={{ fontSize:11,color:C.muted,fontFamily:"'Quicksand',sans-serif" }}>
+                Signed in as <span style={{ color:C.green,fontWeight:700 }}>{userName}</span>
+                {" · "}
+                <span
+                  onClick={()=>{
+                    setStoredName("");
+                    setUserName("");
+                    setNameInput("");
+                  }}
+                  style={{ color:C.muted,textDecoration:"underline",cursor:"pointer" }}
+                >
+                  Change name
+                </span>
+              </div>
               <div style={{
                 display:"flex", alignItems:"center", gap:6,
                 fontFamily:"'League Spartan',sans-serif", fontSize:10, fontWeight:700,
