@@ -275,7 +275,7 @@ const C = {
   bg:"#000000", surface:"#0A0A0A", surfaceRaised:"#111111",
   border:"#1C2E24", borderMid:"#243D2F",
   green:"#5A947B", greenDark:"#014327", greenDeep:"#021A0F",
-  gold:"#C49F4B", white:"#FFFFFF", muted:"#5A7A6A", dim:"#1E3329",
+  gold:"#C49F4B", white:"#FFFFFF", muted:"#5A7A6A", dim:"#1E3329", mutedLight:"#A8C2B5",
   tealDim:"rgba(90,148,123,0.15)", tealBorder:"rgba(90,148,123,0.4)",
   posGreen:"#4CAF7A", negRed:"#E05252",
   exact:"#4CAF7A", correct:"#C49F4B", wrong:"#E05252",
@@ -534,7 +534,7 @@ function ActualTab({ liveScores, lastUpdated }) {
           <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.gold,textTransform:"uppercase",letterSpacing:"0.06em",lineHeight:1.1 }}>
             ★ Official Group Board ★
           </div>
-          <div style={{ fontSize:11,color:C.muted,fontFamily:"'Quicksand',sans-serif",marginTop:6,lineHeight:1.6 }}>
+          <div style={{ fontSize:11,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif",marginTop:6,lineHeight:1.6 }}>
             The real World Cup — built only from completed matches, not predictions. Updates automatically as results come in.
           </div>
         </div>
@@ -874,14 +874,14 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
         <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:22, fontWeight:900, color:C.white, marginBottom:10, letterSpacing:"0.02em" }}>
           The Bracket Unlocks Soon
         </div>
-        <div style={{ fontSize:14, color:C.muted, fontFamily:"'Quicksand',sans-serif", lineHeight:1.7, marginBottom:18 }}>
+        <div style={{ fontSize:14, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif", lineHeight:1.7, marginBottom:18 }}>
           The Round of 32 matchups depend on which 8 third-place teams qualify — and FIFA doesn't lock that in until the group stage wraps on <span style={{ color:C.green, fontWeight:700 }}>June 27</span>.
         </div>
         <div style={{
           background:"rgba(0,0,0,0.3)", border:`1px dashed ${C.border}`,
           borderRadius:10, padding:"18px 20px", maxWidth:440, margin:"0 auto",
         }}>
-          <div style={{ fontSize:12, color:C.dim, fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
+          <div style={{ fontSize:12, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
             Once the real R32 fixtures are announced, this tab unlocks automatically with the official matchups — no progress is lost. Keep filling out your Group Stage predictions in the meantime.
           </div>
         </div>
@@ -1422,7 +1422,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
             No Champion Yet
           </div>
           <p style={{
-            fontFamily:"'Quicksand',sans-serif", fontSize:13, color:C.muted,
+            fontFamily:"'Quicksand',sans-serif", fontSize:13, color:C.mutedLight,
             marginBottom:24, lineHeight:1.7, position:"relative",
             maxWidth:380, marginLeft:"auto", marginRight:"auto",
           }}>
@@ -2222,7 +2222,7 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
             </div>
           </>
         ) : (
-          <div style={{ fontSize:13,color:C.muted,fontFamily:"'Quicksand',sans-serif" }}>No champion picked yet.</div>
+          <div style={{ fontSize:13,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif" }}>No champion picked yet.</div>
         )}
       </div>
 
