@@ -704,6 +704,34 @@ function ResultsTab({ liveScores, scores, lastUpdated }) {
 
 // ── Bracket Tab — Full Knockout Through Final ─────────────────────────────────
 function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPick }) {
+  // Lock the bracket until the real Round of 32 matchups are confirmed.
+  // FIFA's third-place placement matrix (Annex C) has 495 possible combinations,
+  // so accurate R32 slots can't be known until the group stage finishes.
+  const BRACKET_UNLOCK_DATE = new Date("2026-06-28T00:00:00Z");
+  const isLocked = new Date() < BRACKET_UNLOCK_DATE;
+
+  if (isLocked) {
+    return (
+      <div style={{ maxWidth:600, margin:"60px auto", textAlign:"center", padding:"0 16px" }}>
+        <div style={{ fontSize:40, marginBottom:16, opacity:0.6 }}>🔒</div>
+        <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:22, fontWeight:900, color:C.white, marginBottom:10, letterSpacing:"0.02em" }}>
+          The Bracket Unlocks Soon
+        </div>
+        <div style={{ fontSize:14, color:C.muted, fontFamily:"'Quicksand',sans-serif", lineHeight:1.7, marginBottom:18 }}>
+          The Round of 32 matchups depend on which 8 third-place teams qualify — and FIFA doesn't lock that in until the group stage wraps on <span style={{ color:C.green, fontWeight:700 }}>June 27</span>.
+        </div>
+        <div style={{
+          background:"rgba(0,0,0,0.3)", border:`1px dashed ${C.border}`,
+          borderRadius:10, padding:"18px 20px", maxWidth:440, margin:"0 auto",
+        }}>
+          <div style={{ fontSize:12, color:C.dim, fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
+            Once the real R32 fixtures are announced, this tab unlocks automatically with the official matchups — no progress is lost. Keep filling out your Group Stage predictions in the meantime.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const winners = getGroupWinners(scores, liveScores);
 
   // Determine team that won an R32 match based on user pick
@@ -899,7 +927,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
           Full Knockout Bracket
         </div>
         <p style={{ fontSize:12,color:C.muted,fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
-          Pick winners for each round. R32 populates from group stage results. Subsequent rounds populate as you make your picks. Tap a team to select them as your winner. Your Final pick syncs with the Champion tab.
+          Pick winners for each round. R32 populates from group stage results. Subsequent rounds populate as you make your picks. Tap a team to select them as your winner. Your Final pick syncs with the Overview tab.
         </p>
       </div>
 
@@ -1165,7 +1193,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                   Complete your Semifinal picks to choose the World Cup Champion here.
                 </div>
                 <div style={{ marginTop:10, fontSize:11, color:C.dim, fontFamily:"'Quicksand',sans-serif" }}>
-                  Or pick directly in the <span style={{ color:C.gold }}>Champion</span> tab — they sync.
+                  Or pick directly in the <span style={{ color:C.gold }}>Overview</span> tab — they sync.
                 </div>
               </div>
             )}
