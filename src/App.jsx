@@ -248,14 +248,21 @@ function parseApiMatches(apiMatches) {
     if (!homeTeam || !awayTeam) return;
 
     const group = GROUPS[groupLetter];
-    const matchIdx = group.matches.findIndex(([h,a]) => h===homeTeam&&a===awayTeam);
+    let matchIdx = group.matches.findIndex(([h,a]) => h===homeTeam&&a===awayTeam);
+    let reversed = false;
+    if (matchIdx === -1) {
+      matchIdx = group.matches.findIndex(([h,a]) => h===awayTeam&&a===homeTeam);
+      reversed = true;
+    }
     if (matchIdx === -1) return;
 
     const key = `${groupLetter}-${matchIdx}`;
     const score = m.score?.fullTime;
+    const homeScore = score?.home ?? null;
+    const awayScore = score?.away ?? null;
     result[key] = {
-      home: score?.home ?? null,
-      away: score?.away ?? null,
+      home: reversed ? awayScore : homeScore,
+      away: reversed ? homeScore : awayScore,
       status: m.status, // SCHEDULED, IN_PLAY, PAUSED, FINISHED
       utcDate: m.utcDate,
     };
@@ -384,8 +391,34 @@ function Nav({ tab, setTab }) {
 
 // ── Score Input ───────────────────────────────────────────────────────────────
 function ScoreInput({ value, onChange, disabled }) {
+  const handleChange = (raw) => {
+    if (raw === "") { onChange(""); return; }
+    // Strip anything that isn't a digit (blocks '.', '-', 'e', etc.)
+    const digitsOnly = raw.replace(/[^\d]/g, "");
+    if (digitsOnly === "") { onChange(""); return; }
+    let num = parseInt(digitsOnly, 10);
+    if (num > 99) num = 99;
+    onChange(String(num));
+  };
   return (
-    <input className="score-input" type="number" min={0} max={99} value={value} onChange={e=>onChange(e.target.value)} placeholder="–" disabled={disabled} style={{ width:36,height:32,background:disabled?"#050D08":"#050D08",border:`1px solid ${C.border}`,borderRadius:4,color:disabled?C.muted:C.white,textAlign:"center",fontSize:15,fontWeight:700,fontFamily:"'League Spartan',sans-serif",transition:"border-color 0.15s,background 0.15s",opacity:disabled?0.5:1 }} />
+    <input
+      className="score-input"
+      type="number"
+      inputMode="numeric"
+      min={0}
+      max={99}
+      step={1}
+      value={value}
+      onChange={e=>handleChange(e.target.value)}
+      onKeyDown={e=>{ if (["-","+","e","E","."].includes(e.key)) e.preventDefault(); }}
+      onPaste={e=>{
+        const text = (e.clipboardData||window.clipboardData).getData("text");
+        if (!/^\d+$/.test(text)) e.preventDefault();
+      }}
+      placeholder="–"
+      disabled={disabled}
+      style={{ width:36,height:32,background:disabled?"#050D08":"#050D08",border:`1px solid ${C.border}`,borderRadius:4,color:disabled?C.muted:C.white,textAlign:"center",fontSize:15,fontWeight:700,fontFamily:"'League Spartan',sans-serif",transition:"border-color 0.15s,background 0.15s",opacity:disabled?0.5:1 }}
+    />
   );
 }
 
@@ -500,7 +533,7 @@ function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) 
           {hasLive && <span className="live-dot" style={{ fontSize:8,color:C.green }}>● LIVE</span>}
         </div>
         <div style={{ display:"flex",gap:4 }}>
-          {group.teams.slice(0,2).map(t=><Flag key={t} team={t} size={14} />)}
+          {standings.slice(0,2).map(row=><Flag key={row.team} team={row.team} size={14} />)}
         </div>
       </div>
 
