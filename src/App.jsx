@@ -363,6 +363,19 @@ const css = `
   .toggle-btn:hover{color:#5A947B!important;}
   @keyframes blink{0%,100%{opacity:1;}50%{opacity:0.4;}}
   .live-dot{animation:blink 1.2s ease-in-out infinite;}
+
+  /* Responsive grid: uses --cols (desktop column count) but steps down on narrow
+     viewports so cards never force horizontal scroll on mobile. */
+  .balanced-grid{
+    display:grid;
+    grid-template-columns:repeat(var(--cols, 4), 1fr);
+  }
+  @media (max-width: 640px){
+    .balanced-grid{ grid-template-columns:repeat(2, 1fr) !important; }
+  }
+  @media (max-width: 380px){
+    .balanced-grid{ grid-template-columns:repeat(1, 1fr) !important; }
+  }
 `;
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
@@ -1680,9 +1693,10 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
         ];
         const cols = balancedColumns(headlineStats.length, 6);
         return (
-          <div style={{
-            display:"grid", gridTemplateColumns:`repeat(${cols}, 1fr)`, gap:10, marginBottom:28,
+          <div className="balanced-grid" style={{
+            gap:10, marginBottom:28,
             maxWidth:780, marginLeft:"auto", marginRight:"auto",
+            "--cols": cols,
           }}>
             {headlineStats.map(stat => (
               <div key={stat.label} style={{
@@ -1721,9 +1735,10 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
         ];
         const cols = balancedColumns(breakdownStats.length, 4);
         return (
-          <div style={{
-            display:"grid", gridTemplateColumns:`repeat(${cols}, 1fr)`, gap:10, marginBottom:28,
+          <div className="balanced-grid" style={{
+            gap:10, marginBottom:28,
             maxWidth:760, marginLeft:"auto", marginRight:"auto",
+            "--cols": cols,
           }}>
             {breakdownStats.map(s => (
               <div key={s.label} style={{
@@ -1788,7 +1803,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
 
       {/* ── AWARDS GRID ── */}
       <SectionHeader title={`Awards Cabinet — ${awardCount}/${awards.length} Unlocked`} />
-      <div style={{ display:"grid", gridTemplateColumns:`repeat(${balancedColumns(awards.length, 4)}, 1fr)`, gap:10, marginBottom:28, maxWidth:1000, marginLeft:"auto", marginRight:"auto" }}>
+      <div className="balanced-grid" style={{ gap:10, marginBottom:28, maxWidth:1000, marginLeft:"auto", marginRight:"auto", "--cols": balancedColumns(awards.length, 4) }}>
         {awards.map(award => (
           <div key={award.id} style={{
             background: award.unlocked ? `linear-gradient(135deg, rgba(196,159,75,0.1), ${C.surface})` : C.surface,
@@ -1843,7 +1858,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
         return (
           <>
             <SectionHeader title="Insights" />
-            <div style={{ display:"grid", gridTemplateColumns:`repeat(${cols}, 1fr)`, gap:10, marginBottom:12, maxWidth:760, marginLeft:"auto", marginRight:"auto" }}>
+            <div className="balanced-grid" style={{ gap:10, marginBottom:12, maxWidth:760, marginLeft:"auto", marginRight:"auto", "--cols": cols }}>
               {insightItems.map(item => (
                 <InsightCard key={item.key} icon={item.icon} label={item.label} value={item.value} sub={item.sub} gold={item.gold} />
               ))}
@@ -2386,7 +2401,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
         Who's currently holding each title across the whole group. Check your own breakdown on the Your Tournament Stats tab.
       </p>
 
-      <div style={{ display:"grid", gridTemplateColumns:`repeat(${balancedColumns(competitiveAwards.length, 4)}, 1fr)`, gap:10, marginBottom:24, maxWidth:920, marginLeft:"auto", marginRight:"auto" }}>
+      <div className="balanced-grid" style={{ gap:10, marginBottom:24, maxWidth:920, marginLeft:"auto", marginRight:"auto", "--cols": balancedColumns(competitiveAwards.length, 4) }}>
         {competitiveAwards.map(award => {
           const hasLeader = !!award.leader;
           const isMe = hasLeader && award.leader.name === userName;
@@ -2485,7 +2500,7 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
       </div>
 
       {/* Stats summary */}
-      <div style={{ display:"grid", gridTemplateColumns:`repeat(${balancedColumns(4, 4)}, 1fr)`, gap:10, marginBottom:24 }}>
+      <div className="balanced-grid" style={{ gap:10, marginBottom:24, "--cols": balancedColumns(4, 4) }}>
         {[
           { label:"Predictions", value:stats.totalPredictions },
           { label:"Accuracy", value:`${stats.accuracy}%` },
