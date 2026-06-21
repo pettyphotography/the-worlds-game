@@ -13,11 +13,11 @@ const PETTY_LOGO_BASE64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUIAAAC
 
 const FLAG_URL = (code) => `https://flagcdn.com/24x18/${code}.png`;
 
-// Pick the closest flagcdn fixed-size asset so flags never stretch/pixelate at larger display sizes
+// Pick the closest VALID flagcdn fixed-width asset so flags never stretch/pixelate at larger
+// display sizes. flagcdn only serves these exact width folders — any other value 404s.
 function flagSrcForSize(code, size) {
-  // flagcdn's available fixed width sizes (width in px, "w" prefix folders use w{N})
-  const steps = [20, 24, 32, 40, 48, 64, 80, 96, 120, 160, 240];
-  const target = steps.find(s => s >= size * 1.5) || steps[steps.length - 1];
+  const validWidths = [20, 40, 80, 160, 320, 640, 1280, 2560];
+  const target = validWidths.find(w => w >= size * 1.5) || validWidths[validWidths.length - 1];
   return `https://flagcdn.com/w${target}/${code}.png`;
 }
 
@@ -932,6 +932,7 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
 }
 
 function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) {
+  const [open, setOpen] = useState(false);
   const group = GROUPS[groupKey];
   const standings = calcStandings(groupKey, scores, liveScores);
 
@@ -987,12 +988,20 @@ function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) 
         </tbody>
       </table>
 
-      {/* Matches — always fully visible, this page's entire purpose is entering picks */}
+      {/* Matches — collapsed by default, expand individually to enter picks */}
       <div style={{ borderTop:`1px solid ${C.border}` }}>
-        <div style={{ width:"100%",color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.12em",textTransform:"uppercase",padding:"9px 14px",fontWeight:700 }}>
-          Scores & Predictions
-        </div>
-        {group.matches.map(([home,away],idx)=>{
+        <button onClick={()=>setOpen(!open)} style={{
+          width:"100%", background:"none", border:"none",
+          color:C.mutedLight, fontFamily:"'League Spartan',sans-serif",
+          fontSize:10, letterSpacing:"0.12em", textTransform:"uppercase",
+          padding:"9px 14px", cursor:"pointer", textAlign:"left",
+          display:"flex", justifyContent:"space-between", alignItems:"center",
+          fontWeight:700, transition:"color 0.15s",
+        }}>
+          <span>Scores & Predictions</span>
+          <span style={{ fontSize:9, color:C.green }}>{open ? "▲ Hide" : "▼ Show"}</span>
+        </button>
+        {open && group.matches.map(([home,away],idx)=>{
           const key=`${groupKey}-${idx}`;
           return (
             <MatchRow key={key} home={home} away={away} matchKey={key} userScore={scores[key]} liveScore={liveScores[key]} onScore={onScore} groupKey={groupKey} />
@@ -1660,45 +1669,47 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
       </div>
 
       {/* ── HEADLINE STAT STRIP ── */}
-      <div style={{
-        display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:28,
-        maxWidth:780, marginLeft:"auto", marginRight:"auto",
-      }}>
-        {[
+      {(() => {
+        const headlineStats = [
           { label:"Combined Points", value:stats.combinedTotalPts, color:C.gold, icon:"⭐", big:true },
           { label:"Match Points", value:stats.totalPts, color:C.white, icon:"📋" },
           { label:"Group Order Pts", value:stats.groupOrderPoints, color:C.green, icon:"🏗️" },
           { label:"Accuracy", value:`${stats.accuracy}%`, color:C.green, icon:"🎯" },
           { label:"Awards Won", value:`${awardCount}/${awards.length}`, color:C.gold, icon:"🏅" },
           { label:"Exact Scores", value:stats.exact, color:C.exact, icon:"💯" },
-        ].map(stat => (
-          <div key={stat.label} style={{
-            background:stat.big ? `linear-gradient(135deg, rgba(196,159,75,0.15), ${C.surface})` : C.surface,
-            border:`1px solid ${stat.big ? "rgba(196,159,75,0.4)" : C.border}`,
-            borderRadius:8, padding:stat.big ? "20px 14px" : "16px 12px", textAlign:"center",
-            flex:"1 1 130px", minWidth:130, maxWidth:170,
+        ];
+        const cols = balancedColumns(headlineStats.length, 6);
+        return (
+          <div style={{
+            display:"grid", gridTemplateColumns:`repeat(${cols}, 1fr)`, gap:10, marginBottom:28,
+            maxWidth:780, marginLeft:"auto", marginRight:"auto",
           }}>
-            <div style={{ fontSize:stat.big ? 22 : 18, marginBottom:4 }}>{stat.icon}</div>
-            <div style={{
-              fontFamily:"'League Spartan',sans-serif", fontSize:stat.big ? 32 : 26, fontWeight:900,
-              color:stat.color, lineHeight:1,
-            }}>{stat.value}</div>
-            <div style={{
-              fontFamily:"'League Spartan',sans-serif", fontSize:9,
-              color:C.mutedLight, letterSpacing:"0.1em", textTransform:"uppercase",
-              marginTop:6, fontWeight:700,
-            }}>{stat.label}</div>
+            {headlineStats.map(stat => (
+              <div key={stat.label} style={{
+                background:stat.big ? `linear-gradient(135deg, rgba(196,159,75,0.15), ${C.surface})` : C.surface,
+                border:`1px solid ${stat.big ? "rgba(196,159,75,0.4)" : C.border}`,
+                borderRadius:8, padding:stat.big ? "20px 14px" : "16px 12px", textAlign:"center",
+              }}>
+                <div style={{ fontSize:stat.big ? 22 : 18, marginBottom:4 }}>{stat.icon}</div>
+                <div style={{
+                  fontFamily:"'League Spartan',sans-serif", fontSize:stat.big ? 32 : 26, fontWeight:900,
+                  color:stat.color, lineHeight:1,
+                }}>{stat.value}</div>
+                <div style={{
+                  fontFamily:"'League Spartan',sans-serif", fontSize:9,
+                  color:C.mutedLight, letterSpacing:"0.1em", textTransform:"uppercase",
+                  marginTop:6, fontWeight:700,
+                }}>{stat.label}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
 
       {/* ── DETAILED STATS ── */}
       <SectionHeader title="Prediction Breakdown" />
-      <div style={{
-        display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:28,
-        maxWidth:760, marginLeft:"auto", marginRight:"auto",
-      }}>
-        {[
+      {(() => {
+        const breakdownStats = [
           { label:"Predictions Made", value:groupPredictionsCount },
           { label:"Correct Results", value:stats.correct, color:C.correct },
           { label:"Wrong Picks", value:stats.wrong, color:C.wrong },
@@ -1707,17 +1718,25 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
           { label:"Perfect Groups (Order)", value:stats.perfectGroupOrders, color:C.gold },
           { label:"Perfect Groups (Score)", value:stats.perfectGroups },
           { label:"Bracket Picks Made", value:knockoutPicksCount },
-        ].map(s => (
-          <div key={s.label} style={{
-            background:C.surface, border:`1px solid ${C.border}`,
-            borderRadius:8, padding:"12px 14px", textAlign:"center",
-            flex:"1 1 150px", minWidth:150, maxWidth:190,
+        ];
+        const cols = balancedColumns(breakdownStats.length, 4);
+        return (
+          <div style={{
+            display:"grid", gridTemplateColumns:`repeat(${cols}, 1fr)`, gap:10, marginBottom:28,
+            maxWidth:760, marginLeft:"auto", marginRight:"auto",
           }}>
-            <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, fontWeight:900, color:s.color || C.white }}>{s.value}</div>
-            <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, color:C.mutedLight, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:4, fontWeight:700 }}>{s.label}</div>
+            {breakdownStats.map(s => (
+              <div key={s.label} style={{
+                background:C.surface, border:`1px solid ${C.border}`,
+                borderRadius:8, padding:"12px 14px", textAlign:"center",
+              }}>
+                <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, fontWeight:900, color:s.color || C.white }}>{s.value}</div>
+                <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, color:C.mutedLight, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:4, fontWeight:700 }}>{s.label}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        );
+      })()}
 
       {/* ── BRACKET JOURNEY ── */}
       {(r32Picks.length > 0 || r16Picks.length > 0 || finalPick) && (
@@ -1769,7 +1788,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
 
       {/* ── AWARDS GRID ── */}
       <SectionHeader title={`Awards Cabinet — ${awardCount}/${awards.length} Unlocked`} />
-      <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:28, maxWidth:1000, marginLeft:"auto", marginRight:"auto" }}>
+      <div style={{ display:"grid", gridTemplateColumns:`repeat(${balancedColumns(awards.length, 4)}, 1fr)`, gap:10, marginBottom:28, maxWidth:1000, marginLeft:"auto", marginRight:"auto" }}>
         {awards.map(award => (
           <div key={award.id} style={{
             background: award.unlocked ? `linear-gradient(135deg, rgba(196,159,75,0.1), ${C.surface})` : C.surface,
@@ -1777,7 +1796,6 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
             borderRadius:8, padding:"14px 16px",
             opacity: award.unlocked ? 1 : 0.7,
             position:"relative",
-            flex:"1 1 220px", minWidth:220, maxWidth:260,
           }}>
             {award.unlocked && (
               <div style={{
@@ -1813,25 +1831,26 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
       </div>
 
       {/* ── INSIGHTS ── */}
-      {(mostPicked || stats.longestStreak > 0 || stats.boldCalls > 0) && (
-        <>
-          <SectionHeader title="Insights" />
-          <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:12, maxWidth:760, marginLeft:"auto", marginRight:"auto" }}>
-            {mostPicked && (
-              <InsightCard icon="🏅" label="Most Picked Team" value={mostPicked[0]} sub={`Picked ${mostPicked[1]}x across bracket`} />
-            )}
-            {stats.longestStreak > 0 && (
-              <InsightCard icon="🔥" label="Hottest Streak" value={stats.longestStreak} sub="Correct picks in a row" gold />
-            )}
-            {stats.boldCalls > 0 && (
-              <InsightCard icon="⚡" label="Boldest Calls Nailed" value={stats.boldCalls} sub="Exact picks · 3+ goal margin" gold />
-            )}
-            {stats.specialistGroup && (
-              <InsightCard icon="🧠" label="Your Best Group" value={`Group ${stats.specialistGroup}`} sub={`${stats.specialistRate}% hit rate`} />
-            )}
-          </div>
-        </>
-      )}
+      {(() => {
+        const insightItems = [
+          mostPicked && { key:"picked", icon:"🏅", label:"Most Picked Team", value:mostPicked[0], sub:`Picked ${mostPicked[1]}x across bracket` },
+          stats.longestStreak > 0 && { key:"streak", icon:"🔥", label:"Hottest Streak", value:stats.longestStreak, sub:"Correct picks in a row", gold:true },
+          stats.boldCalls > 0 && { key:"bold", icon:"⚡", label:"Boldest Calls Nailed", value:stats.boldCalls, sub:"Exact picks · 3+ goal margin", gold:true },
+          stats.specialistGroup && { key:"specialist", icon:"🧠", label:"Your Best Group", value:`Group ${stats.specialistGroup}`, sub:`${stats.specialistRate}% hit rate` },
+        ].filter(Boolean);
+        if (insightItems.length === 0) return null;
+        const cols = balancedColumns(insightItems.length, 4);
+        return (
+          <>
+            <SectionHeader title="Insights" />
+            <div style={{ display:"grid", gridTemplateColumns:`repeat(${cols}, 1fr)`, gap:10, marginBottom:12, maxWidth:760, marginLeft:"auto", marginRight:"auto" }}>
+              {insightItems.map(item => (
+                <InsightCard key={item.key} icon={item.icon} label={item.label} value={item.value} sub={item.sub} gold={item.gold} />
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       <div style={{
         textAlign:"center", marginTop:16,
@@ -1854,10 +1873,43 @@ function SectionHeader({ title }) {
   );
 }
 
+// Compute a column count that distributes `count` items into visually balanced rows,
+// given a max of `maxCols` columns. Examples: 8 items, max 4 -> 4 cols (4+4). 9 items,
+// max 5 -> 5 cols (5+4). Strongly prefers exactly 2 rows when the count allows it, since
+// that reads as more deliberate than fragmenting into many thin rows.
+function balancedColumns(count, maxCols) {
+  if (count <= maxCols) return count; // fits in one row, no balancing needed
+
+  if (count <= 2 * maxCols) {
+    let best = null;
+    for (let cols = maxCols; cols >= 2; cols--) {
+      if (cols < count - cols) continue; // cols must be >= half of count to stay at 2 rows
+      const lastRow = count - cols;
+      if (lastRow < 0) continue;
+      const gap = Math.abs(cols - lastRow);
+      if (best === null || gap < best.gap) best = { gap, cols };
+    }
+    if (best) return best.cols;
+  }
+
+  // Larger lists (more than 2 rows worth): minimize wasted cells in the last row as a
+  // fraction of the whole grid, staying close to maxCols rather than collapsing narrow.
+  let best = null;
+  const minCols = Math.max(2, maxCols - 1);
+  for (let cols = maxCols; cols >= minCols; cols--) {
+    const rows = Math.ceil(count / cols);
+    const lastRow = count - (rows - 1) * cols;
+    const wasted = cols - lastRow;
+    const wastedRatio = wasted / (rows * cols);
+    if (best === null || wastedRatio < best.ratio - 0.001) best = { ratio: wastedRatio, cols };
+  }
+  return best.cols;
+}
+
 // Small reusable insight card
 function InsightCard({ icon, label, value, sub, gold }) {
   return (
-    <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 16px", textAlign:"center", flex:"1 1 200px", minWidth:200, maxWidth:240 }}>
+    <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 16px", textAlign:"center" }}>
       <div style={{ fontSize:18, marginBottom:6 }}>{icon}</div>
       <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, color:C.mutedLight, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>{label}</div>
       <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:gold ? 22 : 15, color:gold ? C.gold : C.white, fontWeight:900, textTransform:gold ? "none" : "uppercase" }}>{value}</div>
@@ -2334,7 +2386,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
         Who's currently holding each title across the whole group. Check your own breakdown on the Your Tournament Stats tab.
       </p>
 
-      <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:24, maxWidth:920, marginLeft:"auto", marginRight:"auto" }}>
+      <div style={{ display:"grid", gridTemplateColumns:`repeat(${balancedColumns(competitiveAwards.length, 4)}, 1fr)`, gap:10, marginBottom:24, maxWidth:920, marginLeft:"auto", marginRight:"auto" }}>
         {competitiveAwards.map(award => {
           const hasLeader = !!award.leader;
           const isMe = hasLeader && award.leader.name === userName;
@@ -2345,7 +2397,6 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
               borderRadius:6, padding:"14px 16px",
               opacity: hasLeader ? 1 : 0.6,
               position:"relative", overflow:"hidden",
-              flex:"1 1 220px", minWidth:220, maxWidth:260,
             }}>
               {isMe && (
                 <div style={{
@@ -2434,14 +2485,14 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
       </div>
 
       {/* Stats summary */}
-      <div style={{ display:"flex",flexWrap:"wrap",justifyContent:"center",gap:10,marginBottom:24 }}>
+      <div style={{ display:"grid", gridTemplateColumns:`repeat(${balancedColumns(4, 4)}, 1fr)`, gap:10, marginBottom:24 }}>
         {[
           { label:"Predictions", value:stats.totalPredictions },
           { label:"Accuracy", value:`${stats.accuracy}%` },
           { label:"Exact Scores", value:stats.exact },
           { label:"Avg Off By", value:stats.avgDiff },
         ].map(s=>(
-          <div key={s.label} style={{ background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"14px 10px",textAlign:"center",flex:"1 1 110px",minWidth:110,maxWidth:160 }}>
+          <div key={s.label} style={{ background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"14px 10px",textAlign:"center" }}>
             <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.green }}>{s.value}</div>
             <div style={{ fontSize:9,color:C.mutedLight,letterSpacing:"0.1em",textTransform:"uppercase",fontFamily:"'League Spartan',sans-serif",marginTop:4 }}>{s.label}</div>
           </div>
