@@ -9,8 +9,17 @@ const SUPABASE_KEY = (typeof import.meta !== "undefined" && import.meta.env?.VIT
 const API_BASE = "/api/matches";
 
 const TROPHY_SVG = `<svg fill="currentColor" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><g><g><path d="M384,449.963v-12.629c0-17.643-14.357-32-32-32h-15.104c-19.989-34.176-27.52-93.973-27.563-127.659c3.349-6.059,6.549-11.712,9.237-16.341c17.557-30.379,44.096-99.072,44.096-133.333v-4.821c0-5.845-0.043-10.368-0.192-14.336c0.085-0.619,0.192-1.707,0.192-2.176C362.667,47.851,314.816,0,256,0S149.333,47.851,149.333,106.667c0,13.141,2.645,25.835,7.211,37.717c0.043,0.213-0.021,0.427,0.021,0.64l46.763,185.728c-9.493,31.317-23.019,62.037-28.779,74.581H160c-17.643,0-32,14.357-32,32v12.629c-12.395,4.416-21.333,16.149-21.333,30.037v21.333c0,5.888,4.779,10.667,10.667,10.667h277.333c5.888,0,10.667-4.779,10.667-10.667V480C405.333,466.112,396.395,454.379,384,449.963z M256,21.333c40.107,0,73.579,27.883,82.709,64.747c-9.323,1.856-12.672,12.373-16.704,27.072c-1.792,6.528-3.691,12.843-5.76,18.859c-6.677-14.912-21.568-25.344-38.912-25.344c-18.667,0-34.389,12.117-40.171,28.843c-2.453-5.333-4.843-10.965-7.232-17.003c-7.04-17.792-13.12-33.173-27.285-33.173c-4.117,0-7.851,1.771-10.496,4.992c-7.296,8.875-5.269,28.096,3.819,76.352c-15.936-15.744-25.301-37.141-25.301-60.011C170.667,59.605,208.939,21.333,256,21.333z M298.667,149.333c0,11.755-9.557,21.333-21.333,21.333S256,161.088,256,149.333c0-11.755,9.557-21.333,21.333-21.333S298.667,137.579,298.667,149.333z M189.76,189.483c3.84,3.051,7.893,5.845,12.203,8.384c5.717,29.824,11.371,61.099,11.371,79.467c0,1.536-0.149,3.221-0.235,4.821L189.76,189.483z M234.667,277.333c0-22.933-7.168-59.904-14.101-95.659c-3.243-16.789-7.189-37.035-9.536-53.035c9.472,23.893,23.829,56.832,56.939,62.251c3.029,0.683,6.144,1.109,9.365,1.109c3.392,0,6.656-0.491,9.835-1.259c34.816-6.123,47.445-43.371,54.165-67.435V128c0,27.157-23.061,91.2-42.219,124.373C285.12,276.565,256,326.912,256,373.333c0,5.888,4.779,10.667,10.667,10.667s10.667-4.779,10.667-10.667c0-18.496,5.717-38.229,13.184-56.619c3.136,28.309,9.664,62.016,22.08,88.619H197.952C210.347,377.365,234.667,317.333,234.667,277.333z M149.333,437.333c0-5.888,4.8-10.667,10.667-10.667h192c5.867,0,10.667,4.779,10.667,10.667V448H149.333V437.333z M384,490.667H128V480c0-5.888,4.8-10.667,10.667-10.667h234.667C379.2,469.333,384,474.112,384,480V490.667z"/></g></g></svg>`;
+const PETTY_LOGO_BASE64 = "data:image/png;base64,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";
 
 const FLAG_URL = (code) => `https://flagcdn.com/24x18/${code}.png`;
+
+// Pick the closest flagcdn fixed-size asset so flags never stretch/pixelate at larger display sizes
+function flagSrcForSize(code, size) {
+  // flagcdn's available fixed width sizes (width in px, "w" prefix folders use w{N})
+  const steps = [20, 24, 32, 40, 48, 64, 80, 96, 120, 160, 240];
+  const target = steps.find(s => s >= size * 1.5) || steps[steps.length - 1];
+  return `https://flagcdn.com/w${target}/${code}.png`;
+}
 
 const TEAM_FLAGS = {
   Mexico:"mx","South Africa":"za","South Korea":"kr",Czechia:"cz",
@@ -46,7 +55,7 @@ const API_NAME_MAP = {
 function Flag({ team, size = 16 }) {
   const code = TEAM_FLAGS[team];
   if (!code) return null;
-  return <img src={FLAG_URL(code)} alt={team} style={{ width: size * 1.33, height: size, objectFit: "cover", borderRadius: 2, flexShrink: 0, display: "inline-block", verticalAlign: "middle" }} onError={e => e.target.style.display="none"} />;
+  return <img src={flagSrcForSize(code, size)} alt={team} style={{ width: size * 1.33, height: size, objectFit: "cover", borderRadius: 2, flexShrink: 0, display: "inline-block", verticalAlign: "middle" }} onError={e => e.target.style.display="none"} />;
 }
 
 const GROUPS = {
@@ -591,7 +600,7 @@ function MatchRow({ home, away, matchKey, userScore, liveScore, onScore, groupKe
         )}
 
         {/* Away */}
-        <span style={{ flex:1,fontSize:11,color:C.muted,fontFamily:"'Quicksand',sans-serif",display:"flex",alignItems:"center",gap:5 }}>
+        <span style={{ flex:1,fontSize:11,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif",display:"flex",alignItems:"center",gap:5 }}>
           <Flag team={away} size={13} />{away}
         </span>
       </div>
@@ -671,31 +680,31 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
     return (
       <div style={{ background:C.surface,border:`1px solid ${isLive?C.green:C.border}`,borderRadius:6,padding:compact?"10px 12px":"12px 14px",display:"flex",alignItems:"center",gap:10,boxShadow:isLive?"0 0 16px rgba(90,148,123,0.15)":"none" }}>
         <div style={{ flex:1 }}>
-          <div style={{ fontSize:8,fontFamily:"'League Spartan',sans-serif",color:C.mutedLight,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4 }}>Group {m.gKey}</div>
+          <div style={{ fontSize:9,fontFamily:"'League Spartan',sans-serif",color:C.mutedLight,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:5,fontWeight:700 }}>Group {m.gKey}</div>
           <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-            <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1,justifyContent:"flex-end" }}>
+            <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1,justifyContent:"flex-end",fontWeight:600 }}>
               {m.home}<Flag team={m.home} size={14} />
             </span>
             <div style={{ textAlign:"center",minWidth:60 }}>
               {isLive && (
-                <div style={{ fontSize:8,color:C.green,fontFamily:"'League Spartan',sans-serif",fontWeight:700,letterSpacing:"0.1em",marginBottom:2 }} className="live-dot">● LIVE</div>
+                <div style={{ fontSize:9,color:C.green,fontFamily:"'League Spartan',sans-serif",fontWeight:700,letterSpacing:"0.1em",marginBottom:2 }} className="live-dot">● LIVE</div>
               )}
-              <div style={{ fontSize:16,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:m.live.status==="FINISHED"?C.white:C.green }}>
-                {m.live.home !== null ? `${m.live.home} : ${m.live.away}` : "vs"}
+              <div style={{ fontSize:16,fontWeight:900,fontFamily:"'League Spartan',sans-serif",color:m.live.status==="FINISHED"?C.white:C.green }}>
+                {m.live.home !== null ? `${m.live.home} : ${m.live.away}` : "VS"}
               </div>
-              {m.live.status==="FINISHED"&&<div style={{ fontSize:8,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>FT</div>}
-              {m.kickoff&&<div style={{ fontSize:8,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>{m.kickoff} ADT</div>}
+              {m.live.status==="FINISHED"&&<div style={{ fontSize:9,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em",fontWeight:700,marginTop:2 }}>FT</div>}
+              {m.kickoff&&<div style={{ fontSize:9,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.06em",fontWeight:700,marginTop:2 }}>{m.kickoff} ADT</div>}
             </div>
-            <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1 }}>
+            <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1,fontWeight:600 }}>
               <Flag team={m.away} size={14} />{m.away}
             </span>
           </div>
         </div>
         {m.user && m.user.home !== "" && (
           <div style={{ textAlign:"right",flexShrink:0,borderLeft:`1px solid ${C.border}`,paddingLeft:12 }}>
-            <div style={{ fontSize:9,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2 }}>Your Pick</div>
-            <div style={{ fontSize:14,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.mutedLight }}>{m.user.home}:{m.user.away}</div>
-            {result && <div style={{ fontSize:8,color:ptColors[result],fontFamily:"'League Spartan',sans-serif",fontWeight:700,textTransform:"uppercase" }}>{result==="exact"?"+5":result==="correct"?"+3":"0"} pts</div>}
+            <div style={{ fontSize:9,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:3,fontWeight:700 }}>Your Pick</div>
+            <div style={{ fontSize:14,fontWeight:900,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.white }}>{m.user.home}:{m.user.away}</div>
+            {result && <div style={{ fontSize:9,color:ptColors[result],fontFamily:"'League Spartan',sans-serif",fontWeight:700,textTransform:"uppercase",marginTop:1 }}>{result==="exact"?"+5":result==="correct"?"+3":"0"} pts</div>}
           </div>
         )}
       </div>
@@ -709,52 +718,52 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
     return (
       <div style={{
         background:`linear-gradient(135deg, ${C.greenDeep} 0%, #000 60%, ${C.greenDeep} 100%)`,
-        border:`2px solid ${C.green}`, borderRadius:14,
-        padding:"28px 24px", textAlign:"center", position:"relative", overflow:"hidden",
-        boxShadow:`0 0 50px rgba(90,148,123,0.2)`,
+        border:`2px solid ${C.green}`, borderRadius:12,
+        padding:"20px 22px", textAlign:"center", position:"relative", overflow:"hidden",
+        boxShadow:`0 0 36px rgba(90,148,123,0.18)`,
       }}>
         <div style={{
           position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)",
-          width:500, height:250, background:"radial-gradient(ellipse, rgba(90,148,123,0.15) 0%, transparent 70%)",
+          width:420, height:200, background:"radial-gradient(ellipse, rgba(90,148,123,0.12) 0%, transparent 70%)",
           pointerEvents:"none",
         }} />
         <div style={{ position:"relative" }}>
           <div style={{
             display:"inline-flex", alignItems:"center", gap:7,
             background:C.tealDim, border:`1px solid ${C.tealBorder}`, borderRadius:20,
-            padding:"5px 16px", marginBottom:18,
+            padding:"4px 14px", marginBottom:14,
           }}>
-            <span className="live-dot" style={{ width:8,height:8,borderRadius:"50%",background:C.green,display:"inline-block" }} />
-            <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.green,fontWeight:900,letterSpacing:"0.16em",textTransform:"uppercase" }}>Live Now</span>
+            <span className="live-dot" style={{ width:7,height:7,borderRadius:"50%",background:C.green,display:"inline-block" }} />
+            <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,color:C.green,fontWeight:900,letterSpacing:"0.16em",textTransform:"uppercase" }}>Live Now</span>
           </div>
-          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,color:C.mutedLight,letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:18 }}>Group {m.gKey}</div>
+          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:9,color:C.mutedLight,letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:14 }}>Group {m.gKey}</div>
 
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"clamp(16px,5vw,48px)", flexWrap:"wrap" }}>
-            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, minWidth:120 }}>
-              <Flag team={m.home} size={40} />
-              <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:"clamp(14px,3vw,18px)",fontWeight:900,color:C.white,textTransform:"uppercase",letterSpacing:"0.02em" }}>{m.home}</span>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"clamp(14px,4vw,36px)", flexWrap:"wrap" }}>
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, minWidth:100 }}>
+              <Flag team={m.home} size={28} />
+              <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:"clamp(12px,2.4vw,15px)",fontWeight:900,color:C.white,textTransform:"uppercase",letterSpacing:"0.02em" }}>{m.home}</span>
             </div>
 
             <div style={{ textAlign:"center" }}>
               <div style={{
-                fontFamily:"'League Spartan',sans-serif", fontSize:"clamp(44px,9vw,72px)",
+                fontFamily:"'League Spartan',sans-serif", fontSize:"clamp(34px,6.5vw,48px)",
                 fontWeight:900, color:C.green, lineHeight:1,
-                textShadow:`0 0 30px rgba(90,148,123,0.6)`,
+                textShadow:`0 0 20px rgba(90,148,123,0.5)`,
               }}>
                 {m.live.home} : {m.live.away}
               </div>
             </div>
 
-            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, minWidth:120 }}>
-              <Flag team={m.away} size={40} />
-              <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:"clamp(14px,3vw,18px)",fontWeight:900,color:C.white,textTransform:"uppercase",letterSpacing:"0.02em" }}>{m.away}</span>
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, minWidth:100 }}>
+              <Flag team={m.away} size={28} />
+              <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:"clamp(12px,2.4vw,15px)",fontWeight:900,color:C.white,textTransform:"uppercase",letterSpacing:"0.02em" }}>{m.away}</span>
             </div>
           </div>
 
           {m.user && m.user.home !== "" && (
-            <div style={{ marginTop:24, display:"inline-block", background:"rgba(0,0,0,0.3)", border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 22px" }}>
-              <div style={{ fontSize:10,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3 }}>Your Pick</div>
-              <div style={{ fontSize:18,fontWeight:900,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.white }}>{m.user.home} : {m.user.away}</div>
+            <div style={{ marginTop:18, display:"inline-block", background:"rgba(0,0,0,0.3)", border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 18px" }}>
+              <div style={{ fontSize:9,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3 }}>Your Pick</div>
+              <div style={{ fontSize:16,fontWeight:900,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.white }}>{m.user.home} : {m.user.away}</div>
             </div>
           )}
         </div>
@@ -769,15 +778,16 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
       {/* Header banner — Official Game Scores */}
       <SectionBanner title="★ Official Game Scores ★" lastUpdated={lastUpdated} />
 
-      {/* ── ISOLATED: Live Now — full-width focal hero ── */}
+      {/* ── ISOLATED: Live Now — every live match gets equal focal treatment ── */}
       {inPlay.length > 0 && (
         <div style={{ marginBottom:24 }}>
-          <LiveMatchHero m={inPlay[0]} />
-          {inPlay.length > 1 && (
-            <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10, marginTop:12 }}>
-              {inPlay.slice(1).map(m=><MatchCard key={m.key} m={m} />)}
-            </div>
-          )}
+          <div style={{
+            display:"grid",
+            gridTemplateColumns: inPlay.length === 1 ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))",
+            gap:14,
+          }}>
+            {inPlay.map(m => <LiveMatchHero key={m.key} m={m} />)}
+          </div>
         </div>
       )}
 
@@ -922,7 +932,6 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
 }
 
 function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) {
-  const [showMatches, setShowMatches] = useState(false);
   const group = GROUPS[groupKey];
   const standings = calcStandings(groupKey, scores, liveScores);
 
@@ -978,12 +987,12 @@ function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) 
         </tbody>
       </table>
 
-      {/* Matches */}
+      {/* Matches — always fully visible, this page's entire purpose is entering picks */}
       <div style={{ borderTop:`1px solid ${C.border}` }}>
-        <button className="toggle-btn" onClick={()=>setShowMatches(!showMatches)} style={{ width:"100%",background:"none",border:"none",color:C.muted,fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.12em",textTransform:"uppercase",padding:"9px 14px",cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",fontWeight:700,transition:"color 0.15s" }}>
-          <span>Scores & Predictions</span><span style={{ fontSize:9 }}>{showMatches?"▲":"▼"}</span>
-        </button>
-        {showMatches && group.matches.map(([home,away],idx)=>{
+        <div style={{ width:"100%",color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.12em",textTransform:"uppercase",padding:"9px 14px",fontWeight:700 }}>
+          Scores & Predictions
+        </div>
+        {group.matches.map(([home,away],idx)=>{
           const key=`${groupKey}-${idx}`;
           return (
             <MatchRow key={key} home={home} away={away} matchKey={key} userScore={scores[key]} liveScore={liveScores[key]} onScore={onScore} groupKey={groupKey} />
@@ -1022,7 +1031,7 @@ function ThirdPlaceTracker({ scores, liveScores }) {
                   {t.team}
                   {isLastIn&&<span style={{ marginLeft:6,fontSize:8,color:C.gold,background:"rgba(196,159,75,0.1)",border:"1px solid rgba(196,159,75,0.3)",borderRadius:3,padding:"1px 4px",fontWeight:700,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.08em" }}>BUBBLE</span>}
                 </div>
-                <div style={{ fontSize:10,color:C.dim,fontFamily:"'Quicksand',sans-serif" }}>Group {t.groupKey}</div>
+                <div style={{ fontSize:10,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif" }}>Group {t.groupKey}</div>
               </div>
               <div style={{ display:"flex",gap:16,flexShrink:0 }}>
                 {[{val:t.pts,label:"Pts"},{val:t.gd>0?`+${t.gd}`:t.gd,label:"GD",color:t.gd>0?C.posGreen:t.gd<0?C.negRed:undefined},{val:t.gf,label:"GF"}].map(({val,label,color})=>(
@@ -1652,7 +1661,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
 
       {/* ── HEADLINE STAT STRIP ── */}
       <div style={{
-        display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(130px, 1fr))", gap:10, marginBottom:28,
+        display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:28,
         maxWidth:780, marginLeft:"auto", marginRight:"auto",
       }}>
         {[
@@ -1667,6 +1676,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
             background:stat.big ? `linear-gradient(135deg, rgba(196,159,75,0.15), ${C.surface})` : C.surface,
             border:`1px solid ${stat.big ? "rgba(196,159,75,0.4)" : C.border}`,
             borderRadius:8, padding:stat.big ? "20px 14px" : "16px 12px", textAlign:"center",
+            flex:"1 1 130px", minWidth:130, maxWidth:170,
           }}>
             <div style={{ fontSize:stat.big ? 22 : 18, marginBottom:4 }}>{stat.icon}</div>
             <div style={{
@@ -1685,7 +1695,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
       {/* ── DETAILED STATS ── */}
       <SectionHeader title="Prediction Breakdown" />
       <div style={{
-        display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(150px, 1fr))", gap:10, marginBottom:28,
+        display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:28,
         maxWidth:760, marginLeft:"auto", marginRight:"auto",
       }}>
         {[
@@ -1701,6 +1711,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
           <div key={s.label} style={{
             background:C.surface, border:`1px solid ${C.border}`,
             borderRadius:8, padding:"12px 14px", textAlign:"center",
+            flex:"1 1 150px", minWidth:150, maxWidth:190,
           }}>
             <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, fontWeight:900, color:s.color || C.white }}>{s.value}</div>
             <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, color:C.mutedLight, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:4, fontWeight:700 }}>{s.label}</div>
@@ -1758,7 +1769,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
 
       {/* ── AWARDS GRID ── */}
       <SectionHeader title={`Awards Cabinet — ${awardCount}/${awards.length} Unlocked`} />
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:10, marginBottom:28, maxWidth:1000, marginLeft:"auto", marginRight:"auto" }}>
+      <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:28, maxWidth:1000, marginLeft:"auto", marginRight:"auto" }}>
         {awards.map(award => (
           <div key={award.id} style={{
             background: award.unlocked ? `linear-gradient(135deg, rgba(196,159,75,0.1), ${C.surface})` : C.surface,
@@ -1766,6 +1777,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
             borderRadius:8, padding:"14px 16px",
             opacity: award.unlocked ? 1 : 0.7,
             position:"relative",
+            flex:"1 1 220px", minWidth:220, maxWidth:260,
           }}>
             {award.unlocked && (
               <div style={{
@@ -1804,7 +1816,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
       {(mostPicked || stats.longestStreak > 0 || stats.boldCalls > 0) && (
         <>
           <SectionHeader title="Insights" />
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:10, marginBottom:12, maxWidth:760, marginLeft:"auto", marginRight:"auto" }}>
+          <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:12, maxWidth:760, marginLeft:"auto", marginRight:"auto" }}>
             {mostPicked && (
               <InsightCard icon="🏅" label="Most Picked Team" value={mostPicked[0]} sub={`Picked ${mostPicked[1]}x across bracket`} />
             )}
@@ -1845,7 +1857,7 @@ function SectionHeader({ title }) {
 // Small reusable insight card
 function InsightCard({ icon, label, value, sub, gold }) {
   return (
-    <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 16px", textAlign:"center" }}>
+    <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 16px", textAlign:"center", flex:"1 1 200px", minWidth:200, maxWidth:240 }}>
       <div style={{ fontSize:18, marginBottom:6 }}>{icon}</div>
       <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, color:C.mutedLight, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>{label}</div>
       <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:gold ? 22 : 15, color:gold ? C.gold : C.white, fontWeight:900, textTransform:gold ? "none" : "uppercase" }}>{value}</div>
@@ -2055,7 +2067,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
     return pts + orderResult.total;
   };
 
-  if(loading) return <div style={{ color:C.muted,fontFamily:"'Quicksand',sans-serif",fontSize:13,padding:20 }}>Loading...</div>;
+  if(loading) return <div style={{ color:C.mutedLight,fontFamily:"'Quicksand',sans-serif",fontSize:13,padding:20 }}>Loading...</div>;
   const myPts = calcPoints(scores);
 
   // Always include current user if they have a name set, even if shared storage hasn't synced yet
@@ -2139,7 +2151,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
           <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:18, fontWeight:900, color:C.white, textTransform:"uppercase", marginBottom:8 }}>
             No Entries Yet
           </div>
-          <p style={{ color:C.muted, fontFamily:"'Quicksand',sans-serif", fontSize:13, lineHeight:1.7 }}>
+          <p style={{ color:C.mutedLight, fontFamily:"'Quicksand',sans-serif", fontSize:13, lineHeight:1.7 }}>
             Save your predictions to appear here, then share the app link with friends to start the competition.
           </p>
         </div>
@@ -2200,7 +2212,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
           </div>
 
           {leader.champion && leaderFlag && (
-            <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.muted, marginTop:4, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+            <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.mutedLight, marginTop:4, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
               Picks <img src={FLAG_URL(leaderFlag)} alt={leader.champion} style={{ width:16, height:12, objectFit:"cover", borderRadius:2 }} /> {leader.champion} to lift it
             </div>
           )}
@@ -2288,7 +2300,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
                   {isMe && <span style={{ fontSize:9, color:C.green, letterSpacing:"0.1em" }}>YOU</span>}
                 </div>
                 {entry.champion && code && (
-                  <div style={{ fontSize:11, color:C.muted, marginTop:3, fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", gap:5 }}>
+                  <div style={{ fontSize:11, color:C.mutedLight, marginTop:3, fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", gap:5 }}>
                     <img src={FLAG_URL(code)} alt={entry.champion} style={{ width:14, height:10, objectFit:"cover", borderRadius:2 }} />
                     {entry.champion}
                   </div>
@@ -2322,7 +2334,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
         Who's currently holding each title across the whole group. Check your own breakdown on the Your Tournament Stats tab.
       </p>
 
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:10, marginBottom:24, maxWidth:920, marginLeft:"auto", marginRight:"auto", justifyContent:"center" }}>
+      <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:10, marginBottom:24, maxWidth:920, marginLeft:"auto", marginRight:"auto" }}>
         {competitiveAwards.map(award => {
           const hasLeader = !!award.leader;
           const isMe = hasLeader && award.leader.name === userName;
@@ -2333,6 +2345,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
               borderRadius:6, padding:"14px 16px",
               opacity: hasLeader ? 1 : 0.6,
               position:"relative", overflow:"hidden",
+              flex:"1 1 220px", minWidth:220, maxWidth:260,
             }}>
               {isMe && (
                 <div style={{
@@ -2372,7 +2385,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
         })}
       </div>
 
-      <div style={{ fontSize:11, color:C.dim, lineHeight:1.6, fontFamily:"'Quicksand',sans-serif", textAlign:"center" }}>
+      <div style={{ fontSize:11, color:C.mutedLight, lineHeight:1.6, fontFamily:"'Quicksand',sans-serif", textAlign:"center" }}>
         Scoring: 3 pts correct result · 5 pts exact scoreline · +2 pts per correct group slot · +10 bonus for a perfect group order · Updates automatically as real results come in
       </div>
     </div>
@@ -2410,7 +2423,7 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
         </div>
         {theirChampion ? (
           <>
-            {champCode && <img src={FLAG_URL(champCode)} alt={theirChampion} style={{ width:80, height:60, objectFit:"cover", borderRadius:6, marginBottom:10, boxShadow:`0 0 20px rgba(196,159,75,0.3)` }} />}
+            {champCode && <img src={flagSrcForSize(champCode, 60)} alt={theirChampion} style={{ width:80, height:60, objectFit:"cover", borderRadius:6, marginBottom:10, boxShadow:`0 0 20px rgba(196,159,75,0.3)` }} />}
             <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.gold,textTransform:"uppercase",letterSpacing:"0.04em" }}>
               {theirChampion} to lift it
             </div>
@@ -2421,16 +2434,16 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
       </div>
 
       {/* Stats summary */}
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginBottom:24 }}>
+      <div style={{ display:"flex",flexWrap:"wrap",justifyContent:"center",gap:10,marginBottom:24 }}>
         {[
           { label:"Predictions", value:stats.totalPredictions },
           { label:"Accuracy", value:`${stats.accuracy}%` },
           { label:"Exact Scores", value:stats.exact },
           { label:"Avg Off By", value:stats.avgDiff },
         ].map(s=>(
-          <div key={s.label} style={{ background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"14px 10px",textAlign:"center" }}>
+          <div key={s.label} style={{ background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"14px 10px",textAlign:"center",flex:"1 1 110px",minWidth:110,maxWidth:160 }}>
             <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.green }}>{s.value}</div>
-            <div style={{ fontSize:9,color:C.muted,letterSpacing:"0.1em",textTransform:"uppercase",fontFamily:"'League Spartan',sans-serif",marginTop:4 }}>{s.label}</div>
+            <div style={{ fontSize:9,color:C.mutedLight,letterSpacing:"0.1em",textTransform:"uppercase",fontFamily:"'League Spartan',sans-serif",marginTop:4 }}>{s.label}</div>
           </div>
         ))}
       </div>
@@ -2601,7 +2614,7 @@ export default function App() {
             <div style={{ background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"16px 20px",marginBottom:24,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap" }}>
               <div style={{ flex:1,minWidth:200 }}>
                 <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:12,fontWeight:700,color:C.white,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2 }}>Enter your name</div>
-                <div style={{ fontFamily:"'Quicksand',sans-serif",fontSize:12,color:C.muted }}>Save predictions and join the leaderboard</div>
+                <div style={{ fontFamily:"'Quicksand',sans-serif",fontSize:12,color:C.mutedLight }}>Save predictions and join the leaderboard</div>
               </div>
               <input placeholder="Your name" value={nameInput} onChange={e=>setNameInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSave()} style={{ background:"#050D08",border:`1px solid ${C.border}`,borderRadius:6,color:C.white,fontFamily:"'Quicksand',sans-serif",fontSize:14,fontWeight:500,padding:"9px 14px",flex:1,minWidth:160 }} />
               <button className="save-btn" onClick={handleSave} style={{ background:C.green,border:"none",borderRadius:6,color:"#fff",fontFamily:"'League Spartan',sans-serif",fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",padding:"9px 22px",cursor:"pointer" }}>Enter</button>
@@ -2610,7 +2623,7 @@ export default function App() {
 
           {userName&&tab==="groups"&&(
             <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20 }}>
-              <div style={{ fontSize:11,color:C.muted,fontFamily:"'Quicksand',sans-serif" }}>
+              <div style={{ fontSize:11,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif" }}>
                 Signed in as <span style={{ color:C.green,fontWeight:700 }}>{userName}</span>
                 {" · "}
                 <span
@@ -2678,22 +2691,19 @@ export default function App() {
         }}>
           <div style={{
             fontFamily:"'Quicksand',sans-serif", fontSize:11,
-            color:C.muted, letterSpacing:"0.16em", textTransform:"uppercase",
+            color:C.mutedLight, letterSpacing:"0.16em", textTransform:"uppercase",
             marginBottom:10,
           }}>
             Site Designed By
           </div>
-          <div style={{
-            fontFamily:"'League Spartan',sans-serif",
-            fontSize:28, fontWeight:900,
-            color:C.white, letterSpacing:"-0.04em",
-            lineHeight:1, display:"inline-flex", alignItems:"baseline",
-          }}>
-            petty<span style={{ color:C.green }}>.</span>
-          </div>
+          <img
+            src={PETTY_LOGO_BASE64}
+            alt="Petty Photography"
+            style={{ height:32, width:"auto", display:"inline-block", opacity:0.95 }}
+          />
           <div style={{
             marginTop:20, fontFamily:"'Quicksand',sans-serif",
-            fontSize:10, color:C.dim, letterSpacing:"0.1em",
+            fontSize:10, color:C.mutedLight, letterSpacing:"0.1em",
           }}>
             © 2026 · Built for the love of the game
           </div>
