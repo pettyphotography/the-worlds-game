@@ -439,7 +439,53 @@ function Nav({ tab, setTab }) {
   );
 }
 
-// ── Score Input ───────────────────────────────────────────────────────────────
+// ── Tab Page Descriptions — short centered subtitle shown under nav per tab ───
+const TAB_DESCRIPTIONS = {
+  groups: "Predict every group stage match yourself. Standings, third-place race, and points update live as results come in.",
+  actual: "The real World Cup — built only from completed matches, not predictions. Live games, upcoming kickoffs, and official standings.",
+  bracket: "Pick your way through the knockout rounds, from the Round of 32 to the Final. Your champion pick lives here.",
+  champion: "Every prediction, every point, every accolade earned — your full tournament breakdown in one place.",
+  leaderboard: "See who's leading the competition and who's holding the title in every award category.",
+};
+
+function PageHeader({ tab }) {
+  const desc = TAB_DESCRIPTIONS[tab];
+  if (!desc) return null;
+  return (
+    <div style={{
+      textAlign:"center", maxWidth:640, margin:"20px auto 0",
+      padding:"0 16px",
+      fontFamily:"'Quicksand',sans-serif", fontSize:13,
+      color:C.mutedLight, lineHeight:1.7,
+    }}>
+      {desc}
+    </div>
+  );
+}
+
+// Centered gold banner used to separate major sections within a tab (e.g. Official Game Scores / Official Group Table)
+function SectionBanner({ title, lastUpdated }) {
+  return (
+    <div style={{
+      background:`linear-gradient(135deg, ${C.greenDark} 0%, #031A0E 100%)`,
+      border:`2px solid ${C.gold}`, borderRadius:10,
+      padding:"16px 20px", marginBottom:20,
+      textAlign:"center", position:"relative",
+      boxShadow:"0 0 24px rgba(196,159,75,0.08)",
+    }}>
+      <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:22,fontWeight:900,color:C.gold,textTransform:"uppercase",letterSpacing:"0.06em",lineHeight:1.1 }}>
+        {title}
+      </div>
+      {lastUpdated && (
+        <div style={{ fontSize:10,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif",marginTop:6 }}>
+          Updated {lastUpdated}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function ScoreInput({ value, onChange, disabled }) {
   const handleChange = (raw) => {
     if (raw === "") { onChange(""); return; }
@@ -625,7 +671,7 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
     return (
       <div style={{ background:C.surface,border:`1px solid ${isLive?C.green:C.border}`,borderRadius:6,padding:compact?"10px 12px":"12px 14px",display:"flex",alignItems:"center",gap:10,boxShadow:isLive?"0 0 16px rgba(90,148,123,0.15)":"none" }}>
         <div style={{ flex:1 }}>
-          <div style={{ fontSize:8,fontFamily:"'League Spartan',sans-serif",color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4 }}>Group {m.gKey}</div>
+          <div style={{ fontSize:8,fontFamily:"'League Spartan',sans-serif",color:C.mutedLight,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4 }}>Group {m.gKey}</div>
           <div style={{ display:"flex",alignItems:"center",gap:8 }}>
             <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1,justifyContent:"flex-end" }}>
               {m.home}<Flag team={m.home} size={14} />
@@ -637,8 +683,8 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
               <div style={{ fontSize:16,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:m.live.status==="FINISHED"?C.white:C.green }}>
                 {m.live.home !== null ? `${m.live.home} : ${m.live.away}` : "vs"}
               </div>
-              {m.live.status==="FINISHED"&&<div style={{ fontSize:8,color:C.muted,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>FT</div>}
-              {m.kickoff&&<div style={{ fontSize:8,color:C.muted,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>{m.kickoff} ADT</div>}
+              {m.live.status==="FINISHED"&&<div style={{ fontSize:8,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>FT</div>}
+              {m.kickoff&&<div style={{ fontSize:8,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>{m.kickoff} ADT</div>}
             </div>
             <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1 }}>
               <Flag team={m.away} size={14} />{m.away}
@@ -647,11 +693,71 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
         </div>
         {m.user && m.user.home !== "" && (
           <div style={{ textAlign:"right",flexShrink:0,borderLeft:`1px solid ${C.border}`,paddingLeft:12 }}>
-            <div style={{ fontSize:9,color:C.muted,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2 }}>Your Pick</div>
-            <div style={{ fontSize:14,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.muted }}>{m.user.home}:{m.user.away}</div>
+            <div style={{ fontSize:9,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2 }}>Your Pick</div>
+            <div style={{ fontSize:14,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.mutedLight }}>{m.user.home}:{m.user.away}</div>
             {result && <div style={{ fontSize:8,color:ptColors[result],fontFamily:"'League Spartan',sans-serif",fontWeight:700,textTransform:"uppercase" }}>{result==="exact"?"+5":result==="correct"?"+3":"0"} pts</div>}
           </div>
         )}
+      </div>
+    );
+  };
+
+  // Full-width focal hero for the single live match — much bigger, can't be missed
+  const LiveMatchHero = ({ m }) => {
+    const result = scoreResult(m.user, m.live);
+    const ptColors = { exact:C.exact, correct:C.correct, wrong:C.wrong };
+    return (
+      <div style={{
+        background:`linear-gradient(135deg, ${C.greenDeep} 0%, #000 60%, ${C.greenDeep} 100%)`,
+        border:`2px solid ${C.green}`, borderRadius:14,
+        padding:"28px 24px", textAlign:"center", position:"relative", overflow:"hidden",
+        boxShadow:`0 0 50px rgba(90,148,123,0.2)`,
+      }}>
+        <div style={{
+          position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)",
+          width:500, height:250, background:"radial-gradient(ellipse, rgba(90,148,123,0.15) 0%, transparent 70%)",
+          pointerEvents:"none",
+        }} />
+        <div style={{ position:"relative" }}>
+          <div style={{
+            display:"inline-flex", alignItems:"center", gap:7,
+            background:C.tealDim, border:`1px solid ${C.tealBorder}`, borderRadius:20,
+            padding:"5px 16px", marginBottom:18,
+          }}>
+            <span className="live-dot" style={{ width:8,height:8,borderRadius:"50%",background:C.green,display:"inline-block" }} />
+            <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.green,fontWeight:900,letterSpacing:"0.16em",textTransform:"uppercase" }}>Live Now</span>
+          </div>
+          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,color:C.mutedLight,letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:18 }}>Group {m.gKey}</div>
+
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"clamp(16px,5vw,48px)", flexWrap:"wrap" }}>
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, minWidth:120 }}>
+              <Flag team={m.home} size={40} />
+              <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:"clamp(14px,3vw,18px)",fontWeight:900,color:C.white,textTransform:"uppercase",letterSpacing:"0.02em" }}>{m.home}</span>
+            </div>
+
+            <div style={{ textAlign:"center" }}>
+              <div style={{
+                fontFamily:"'League Spartan',sans-serif", fontSize:"clamp(44px,9vw,72px)",
+                fontWeight:900, color:C.green, lineHeight:1,
+                textShadow:`0 0 30px rgba(90,148,123,0.6)`,
+              }}>
+                {m.live.home} : {m.live.away}
+              </div>
+            </div>
+
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, minWidth:120 }}>
+              <Flag team={m.away} size={40} />
+              <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:"clamp(14px,3vw,18px)",fontWeight:900,color:C.white,textTransform:"uppercase",letterSpacing:"0.02em" }}>{m.away}</span>
+            </div>
+          </div>
+
+          {m.user && m.user.home !== "" && (
+            <div style={{ marginTop:24, display:"inline-block", background:"rgba(0,0,0,0.3)", border:`1px solid ${C.border}`, borderRadius:8, padding:"10px 22px" }}>
+              <div style={{ fontSize:10,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:3 }}>Your Pick</div>
+              <div style={{ fontSize:18,fontWeight:900,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.white }}>{m.user.home} : {m.user.away}</div>
+            </div>
+          )}
+        </div>
       </div>
     );
   };
@@ -660,35 +766,18 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
 
   return (
     <div className="fade-in">
-      {/* Header banner */}
-      <div style={{
-        background:`linear-gradient(135deg, ${C.greenDark} 0%, #031A0E 100%)`,
-        border:`2px solid ${C.gold}`, borderRadius:10,
-        padding:"18px 20px", marginBottom:20,
-        display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10,
-        boxShadow:"0 0 24px rgba(196,159,75,0.08)",
-      }}>
-        <div>
-          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.gold,textTransform:"uppercase",letterSpacing:"0.06em",lineHeight:1.1 }}>
-            ★ Official Group Scores ★
-          </div>
-          <div style={{ fontSize:11,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif",marginTop:6,lineHeight:1.6 }}>
-            The real World Cup — built only from completed matches, not predictions. Updates automatically as results come in.
-          </div>
-        </div>
-        {lastUpdated && <div style={{ fontSize:10,color:C.dim,fontFamily:"'Quicksand',sans-serif",whiteSpace:"nowrap" }}>Updated {lastUpdated}</div>}
-      </div>
+      {/* Header banner — Official Game Scores */}
+      <SectionBanner title="★ Official Game Scores ★" lastUpdated={lastUpdated} />
 
-      {/* ── ISOLATED: Live Now ── */}
+      {/* ── ISOLATED: Live Now — full-width focal hero ── */}
       {inPlay.length > 0 && (
-        <div style={{ marginBottom:20 }}>
-          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.green,fontWeight:900,letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:12,display:"flex",alignItems:"center",gap:7 }}>
-            <span className="live-dot" style={{ width:8,height:8,borderRadius:"50%",background:C.green,display:"inline-block" }} />
-            Live Now
-          </div>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
-            {inPlay.map(m=><MatchCard key={m.key} m={m} />)}
-          </div>
+        <div style={{ marginBottom:24 }}>
+          <LiveMatchHero m={inPlay[0]} />
+          {inPlay.length > 1 && (
+            <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10, marginTop:12 }}>
+              {inPlay.slice(1).map(m=><MatchCard key={m.key} m={m} />)}
+            </div>
+          )}
         </div>
       )}
 
@@ -764,6 +853,9 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
           No matches finished yet — group standings will populate as results come in.
         </div>
       )}
+
+      {/* Second banner — Official Group Table */}
+      <SectionBanner title="★ Official Group Table ★" />
 
       <ThirdPlaceTracker scores={EMPTY} liveScores={liveScores} />
 
@@ -1169,12 +1261,12 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
 
   return (
     <div className="fade-in">
-      <div style={{ marginBottom:24 }}>
+      <div style={{ marginBottom:24, textAlign:"center" }}>
         <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.gold,fontWeight:700,marginBottom:6 }}>
           Full Knockout Bracket
         </div>
-        <p style={{ fontSize:12,color:C.muted,fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
-          Pick winners for each round. R32 populates from group stage results. Subsequent rounds populate as you make your picks. Tap a team to select them as your winner. Your Final pick syncs with the Your Tournament Stats tab.
+        <p style={{ fontSize:12,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif", lineHeight:1.6, maxWidth:560, margin:"0 auto" }}>
+          Pick winners for each round. R32 populates from group stage results. Subsequent rounds populate as you make your picks. Tap a team to select them as your winner.
         </p>
       </div>
 
@@ -1343,7 +1435,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
               marginBottom:4,
             }}>MetLife Stadium</div>
             <div style={{
-              fontFamily:"'Quicksand',sans-serif", fontSize:12, color:C.muted,
+              fontFamily:"'Quicksand',sans-serif", fontSize:12, color:C.mutedLight,
               letterSpacing:"0.12em", marginBottom:28,
             }}>East Rutherford · New Jersey · July 19, 2026</div>
 
@@ -1436,10 +1528,10 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                 background:"rgba(0,0,0,0.3)", border:`1px dashed ${C.border}`,
                 borderRadius:10, padding:"24px 18px", maxWidth:420, margin:"0 auto",
               }}>
-                <div style={{ fontSize:13, color:C.muted, fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
+                <div style={{ fontSize:13, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
                   Complete your Semifinal picks to choose the World Cup Champion here.
                 </div>
-                <div style={{ marginTop:10, fontSize:11, color:C.dim, fontFamily:"'Quicksand',sans-serif" }}>
+                <div style={{ marginTop:10, fontSize:11, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif" }}>
                   Or pick directly in the <span style={{ color:C.gold }}>Your Tournament Stats</span> tab — they sync.
                 </div>
               </div>
@@ -1530,7 +1622,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
             fontSize:"clamp(26px, 5vw, 38px)", fontWeight:900,
             color:C.white, textTransform:"uppercase",
             letterSpacing:"-0.01em", marginBottom:6,
-          }}>{userName || "Your"} Run So Far</div>
+          }}>{userName ? `${userName}'s` : "Your"} Run So Far</div>
 
           <p style={{
             fontFamily:"'Quicksand',sans-serif", fontSize:13, color:C.mutedLight,
@@ -1561,6 +1653,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
       {/* ── HEADLINE STAT STRIP ── */}
       <div style={{
         display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(130px, 1fr))", gap:10, marginBottom:28,
+        maxWidth:780, marginLeft:"auto", marginRight:"auto",
       }}>
         {[
           { label:"Combined Points", value:stats.combinedTotalPts, color:C.gold, icon:"⭐", big:true },
@@ -1593,6 +1686,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
       <SectionHeader title="Prediction Breakdown" />
       <div style={{
         display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(150px, 1fr))", gap:10, marginBottom:28,
+        maxWidth:760, marginLeft:"auto", marginRight:"auto",
       }}>
         {[
           { label:"Predictions Made", value:groupPredictionsCount },
@@ -1606,7 +1700,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
         ].map(s => (
           <div key={s.label} style={{
             background:C.surface, border:`1px solid ${C.border}`,
-            borderRadius:8, padding:"12px 14px",
+            borderRadius:8, padding:"12px 14px", textAlign:"center",
           }}>
             <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, fontWeight:900, color:s.color || C.white }}>{s.value}</div>
             <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, color:C.mutedLight, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:4, fontWeight:700 }}>{s.label}</div>
@@ -1664,7 +1758,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
 
       {/* ── AWARDS GRID ── */}
       <SectionHeader title={`Awards Cabinet — ${awardCount}/${awards.length} Unlocked`} />
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:10, marginBottom:28 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:10, marginBottom:28, maxWidth:1000, marginLeft:"auto", marginRight:"auto" }}>
         {awards.map(award => (
           <div key={award.id} style={{
             background: award.unlocked ? `linear-gradient(135deg, rgba(196,159,75,0.1), ${C.surface})` : C.surface,
@@ -1710,7 +1804,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
       {(mostPicked || stats.longestStreak > 0 || stats.boldCalls > 0) && (
         <>
           <SectionHeader title="Insights" />
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:10, marginBottom:12 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:10, marginBottom:12, maxWidth:760, marginLeft:"auto", marginRight:"auto" }}>
             {mostPicked && (
               <InsightCard icon="🏅" label="Most Picked Team" value={mostPicked[0]} sub={`Picked ${mostPicked[1]}x across bracket`} />
             )}
@@ -1751,7 +1845,7 @@ function SectionHeader({ title }) {
 // Small reusable insight card
 function InsightCard({ icon, label, value, sub, gold }) {
   return (
-    <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 16px" }}>
+    <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 16px", textAlign:"center" }}>
       <div style={{ fontSize:18, marginBottom:6 }}>{icon}</div>
       <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, color:C.mutedLight, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>{label}</div>
       <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:gold ? 22 : 15, color:gold ? C.gold : C.white, fontWeight:900, textTransform:gold ? "none" : "uppercase" }}>{value}</div>
@@ -2228,7 +2322,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
         Who's currently holding each title across the whole group. Check your own breakdown on the Your Tournament Stats tab.
       </p>
 
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:10, marginBottom:24 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:10, marginBottom:24, maxWidth:920, marginLeft:"auto", marginRight:"auto", justifyContent:"center" }}>
         {competitiveAwards.map(award => {
           const hasLeader = !!award.leader;
           const isMe = hasLeader && award.leader.name === userName;
@@ -2298,7 +2392,7 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
     <div className="fade-in">
       <button onClick={onBack} style={{
         background:"none", border:`1px solid ${C.border}`, borderRadius:6,
-        color:C.muted, fontFamily:"'League Spartan',sans-serif", fontSize:11,
+        color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", fontSize:11,
         fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase",
         padding:"7px 14px", cursor:"pointer", marginBottom:18,
       }}>
@@ -2311,7 +2405,7 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
         border:`2px solid ${C.gold}`, borderRadius:10,
         padding:"24px 20px", marginBottom:24, textAlign:"center",
       }}>
-        <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:8 }}>
+        <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.mutedLight,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:8 }}>
           {entry.name}'s Predictions
         </div>
         {theirChampion ? (
@@ -2500,6 +2594,7 @@ export default function App() {
       <div style={{ background:C.bg,minHeight:"100vh",color:C.white,fontFamily:"'Quicksand',sans-serif" }}>
         <Hero liveStatus={liveStatus} />
         <Nav tab={tab} setTab={(t)=>{ setViewProfile(null); setTab(t); }} />
+        <PageHeader tab={tab} />
         <div style={{ maxWidth:1100,margin:"0 auto",padding:"28px 16px 60px" }}>
 
           {!userName&&(
