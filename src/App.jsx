@@ -369,7 +369,9 @@ const css = `
   .balanced-grid{
     display:grid;
     grid-template-columns:repeat(var(--cols, 4), 1fr);
+    align-items:stretch;
   }
+  .balanced-grid > *{ min-width:0; }
   @media (max-width: 640px){
     .balanced-grid{ grid-template-columns:repeat(2, 1fr) !important; }
   }
@@ -2354,27 +2356,28 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
                 {i+1}
               </div>
 
-              <div style={{ flex:1, marginLeft:10 }}>
+              <div style={{ flex:1, marginLeft:10, minWidth:0 }}>
                 <div style={{
                   fontSize:size.name, fontWeight:isLeader?900:700,
                   fontFamily:"'League Spartan',sans-serif",
                   textTransform:"uppercase", letterSpacing:"0.03em",
                   color:isLeader ? C.gold : isMe ? C.green : C.white,
                   display:"flex", alignItems:"center", gap:8,
+                  overflow:"hidden",
                 }}>
-                  {entry.name}
-                  {isLeader && <span style={{ fontSize:14, color:C.gold }}>♛</span>}
-                  {isMe && <span style={{ fontSize:9, color:C.green, letterSpacing:"0.1em" }}>YOU</span>}
+                  <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", minWidth:0 }}>{entry.name}</span>
+                  {isLeader && <span style={{ fontSize:14, color:C.gold, flexShrink:0 }}>♛</span>}
+                  {isMe && <span style={{ fontSize:9, color:C.green, letterSpacing:"0.1em", flexShrink:0 }}>YOU</span>}
                 </div>
                 {entry.champion && code && (
-                  <div style={{ fontSize:11, color:C.mutedLight, marginTop:3, fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", gap:5 }}>
-                    <img src={FLAG_URL(code)} alt={entry.champion} style={{ width:14, height:10, objectFit:"cover", borderRadius:2 }} />
-                    {entry.champion}
+                  <div style={{ fontSize:11, color:C.mutedLight, marginTop:3, fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", gap:5, overflow:"hidden" }}>
+                    <img src={FLAG_URL(code)} alt={entry.champion} style={{ width:14, height:10, objectFit:"cover", borderRadius:2, flexShrink:0 }} />
+                    <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{entry.champion}</span>
                   </div>
                 )}
               </div>
 
-              <div style={{ textAlign:"right" }}>
+              <div style={{ textAlign:"right", flexShrink:0 }}>
                 <div style={{
                   fontSize:size.pts, fontWeight:900,
                   fontFamily:"'League Spartan',sans-serif",
@@ -2412,6 +2415,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
               borderRadius:6, padding:"14px 16px",
               opacity: hasLeader ? 1 : 0.6,
               position:"relative", overflow:"hidden",
+              minWidth:0, display:"flex", flexDirection:"column",
             }}>
               {isMe && (
                 <div style={{
@@ -2430,18 +2434,23 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
               }}>{award.title}</div>
               <div style={{
                 fontFamily:"'Quicksand',sans-serif", fontSize:10, color:C.mutedLight,
-                marginBottom:10, lineHeight:1.5,
+                marginBottom:10, lineHeight:1.5, flex:1,
               }}>{award.subtitle}</div>
               {hasLeader ? (
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                  <span style={{
+                <div style={{ minWidth:0 }}>
+                  <div style={{
                     fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:900,
                     color:isMe ? C.green : C.white, textTransform:"uppercase",
-                  }}>{award.leader.name}</span>
-                  <span style={{
-                    fontFamily:"'League Spartan',sans-serif", fontSize:13, fontWeight:900,
-                    color:C.gold,
-                  }}>{award.leader.value}<span style={{ fontSize:9, color:C.mutedLight, fontWeight:700, marginLeft:3, textTransform:"uppercase" }}>{award.suffix}</span></span>
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                    marginBottom:4, minWidth:0,
+                  }}>{award.leader.name}</div>
+                  <div style={{
+                    fontFamily:"'League Spartan',sans-serif", fontSize:15, fontWeight:900,
+                    color:C.gold, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+                  }}>
+                    {award.leader.value}
+                    <span style={{ fontSize:9, color:C.mutedLight, fontWeight:700, marginLeft:4, textTransform:"uppercase" }}>{award.suffix}</span>
+                  </div>
                 </div>
               ) : (
                 <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.mutedLight, fontStyle:"italic" }}>Not yet claimed</div>
