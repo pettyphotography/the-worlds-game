@@ -163,6 +163,56 @@ function scoreResult(pred, real) {
 
 const SCORE_PTS = { exact: 5, correct: 3, wrong: 0 };
 
+// ── Group Order Scoring ───────────────────────────────────────────────────────
+// Rewards predicting the full 1st-4th finishing order of a group.
+// +2 pts per team in its exact correct slot (max 8 for 4 teams)
+// +10 bonus if all 4 slots are exactly right ("Perfect Group")
+const GROUP_ORDER_PTS_PER_SLOT = 2;
+const GROUP_ORDER_PERFECT_BONUS = 10;
+
+// Returns { points, correctSlots, isPerfect, actualOrder, predictedOrder } for one group,
+// or null if the group isn't fully finished yet (can't score an incomplete group).
+function calcGroupOrderScore(groupKey, userScores, liveScores) {
+  const group = GROUPS[groupKey];
+  if (!group) return null;
+
+  // Group must be fully finished (all 6 matches FINISHED) to score order
+  const allFinished = group.matches.every((_, idx) => liveScores[`${groupKey}-${idx}`]?.status === "FINISHED");
+  if (!allFinished) return null;
+
+  const actualStandings = calcStandings(groupKey, {}, liveScores);
+  const predictedStandings = calcStandings(groupKey, userScores, {});
+
+  const actualOrder = actualStandings.map(s => s.team);
+  const predictedOrder = predictedStandings.map(s => s.team);
+
+  let correctSlots = 0;
+  for (let i = 0; i < 4; i++) {
+    if (actualOrder[i] === predictedOrder[i]) correctSlots++;
+  }
+  const isPerfect = correctSlots === 4;
+  const points = (correctSlots * GROUP_ORDER_PTS_PER_SLOT) + (isPerfect ? GROUP_ORDER_PERFECT_BONUS : 0);
+
+  return { points, correctSlots, isPerfect, actualOrder, predictedOrder };
+}
+
+// Total group-order points across all 12 groups for one user
+function calcTotalGroupOrderPoints(userScores, liveScores) {
+  let total = 0;
+  let perfectCount = 0;
+  let groupsScored = 0;
+  Object.keys(GROUPS).forEach(gKey => {
+    const result = calcGroupOrderScore(gKey, userScores, liveScores);
+    if (result) {
+      total += result.points;
+      groupsScored++;
+      if (result.isPerfect) perfectCount++;
+    }
+  });
+  return { total, perfectCount, groupsScored };
+}
+
+
 // ── Storage (Supabase) ────────────────────────────────────────────────────────
 const SUPABASE_HEADERS = SUPABASE_KEY ? {
   apikey: SUPABASE_KEY,
@@ -379,9 +429,9 @@ function Nav({ tab, setTab }) {
   return (
     <div style={{ borderBottom:`1px solid ${C.border}`,background:C.bg,position:"sticky",top:0,zIndex:100 }}>
       <div style={{ maxWidth:1100,margin:"0 auto",display:"flex",overflowX:"auto" }}>
-        {[["groups","Groups"],["actual","Official Board"],["bracket","The Bracket"],["results","Live Results"],["champion","Overview"],["leaderboard","Leaderboard"]].map(([id,label])=>(
+        {[["groups","Group Stage Picks"],["actual","Official Group Scores"],["bracket","Knockout Stage Picks"],["champion","Your Tournament Stats"],["leaderboard","Leaderboard"]].map(([id,label])=>(
           <button key={id} className="nav-btn" onClick={()=>setTab(id)} style={{ background:"none",border:"none",borderBottom:tab===id?`2px solid ${C.green}`:"2px solid transparent",color:tab===id?C.green:C.muted,fontFamily:"'League Spartan',sans-serif",fontSize:12,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",padding:"13px 20px 11px",cursor:"pointer",whiteSpace:"nowrap" }}>
-            {label}{id==="results"&&<span style={{ marginLeft:5,fontSize:8,color:C.green,verticalAlign:"middle" }}>●</span>}
+            {label}{id==="actual"&&<span style={{ marginLeft:5,fontSize:8,color:C.green,verticalAlign:"middle" }}>●</span>}
           </button>
         ))}
       </div>
@@ -512,27 +562,115 @@ function MatchRow({ home, away, matchKey, userScore, liveScore, onScore, groupKe
   );
 }
 
-// ── Group Card ────────────────────────────────────────────────────────────────
-// ── Actual Table — Official Standings From Live Results Only ─────────────────
-function ActualTab({ liveScores, lastUpdated }) {
+// ── Official Group Scores — Merged Live Results + Official Standings ─────────
+function ActualTab({ liveScores, scores, lastUpdated }) {
   const EMPTY = {};
   const qualifyingThirds = getThirdPlaceQualifiers(EMPTY, liveScores);
+  const [openGroups, setOpenGroups] = useState({}); // accordion state per group
+  const [showFinished, setShowFinished] = useState(false);
 
-  // Has anything actually finished yet?
   const anyFinished = Object.values(liveScores).some(s=>s.status==="FINISHED");
+
+  // Build full match list with group/team context
+  const allMatches = [];
+  Object.keys(GROUPS).forEach(gKey => {
+    GROUPS[gKey].matches.forEach(([home,away],idx) => {
+      const key = `${gKey}-${idx}`;
+      const live = liveScores[key];
+      const user = scores[key];
+      if (live) allMatches.push({ gKey, idx, key, home, away, live, user });
+    });
+  });
+
+  const inPlay = allMatches.filter(m=>m.live.status==="IN_PLAY"||m.live.status==="PAUSED");
+  const finished = allMatches.filter(m=>m.live.status==="FINISHED");
+  const upcoming = allMatches
+    .filter(m=>m.live.status==="SCHEDULED"||m.live.status==="TIMED")
+    .filter(m=>m.live.utcDate)
+    .sort((a,b)=>new Date(a.live.utcDate)-new Date(b.live.utcDate));
+
+  const ADT_TZ = "America/Halifax";
+  const dayFormatter = new Intl.DateTimeFormat("en-US", { timeZone:ADT_TZ, weekday:"long", month:"long", day:"numeric" });
+  const timeFormatter = new Intl.DateTimeFormat("en-US", { timeZone:ADT_TZ, hour:"numeric", minute:"2-digit" });
+  const dateKeyFormatter = new Intl.DateTimeFormat("en-CA", { timeZone:ADT_TZ, year:"numeric", month:"2-digit", day:"2-digit" });
+
+  // "Up Next" = the soonest upcoming day's matches only (today/next matchday), isolated
+  let upNextDayKey = null;
+  const upNextMatches = [];
+  upcoming.forEach(m => {
+    const d = new Date(m.live.utcDate);
+    const dayKey = dateKeyFormatter.format(d);
+    if (upNextDayKey === null) upNextDayKey = dayKey;
+    if (dayKey === upNextDayKey) upNextMatches.push({ ...m, kickoff: timeFormatter.format(d) });
+  });
+
+  // Remaining upcoming (later days), grouped by day, for the accordion
+  const laterUpcomingByDay = [];
+  upcoming.forEach(m => {
+    const d = new Date(m.live.utcDate);
+    const dayKey = dateKeyFormatter.format(d);
+    if (dayKey === upNextDayKey) return; // already shown in Up Next
+    let group = laterUpcomingByDay.find(g=>g.dayKey===dayKey);
+    if (!group) {
+      group = { dayKey, label: dayFormatter.format(d), matches: [] };
+      laterUpcomingByDay.push(group);
+    }
+    group.matches.push({ ...m, kickoff: timeFormatter.format(d) });
+  });
+
+  const MatchCard = ({ m, compact }) => {
+    const result = scoreResult(m.user, m.live);
+    const ptColors = { exact:C.exact, correct:C.correct, wrong:C.wrong };
+    const isLive = m.live.status==="IN_PLAY"||m.live.status==="PAUSED";
+    return (
+      <div style={{ background:C.surface,border:`1px solid ${isLive?C.green:C.border}`,borderRadius:6,padding:compact?"10px 12px":"12px 14px",display:"flex",alignItems:"center",gap:10,boxShadow:isLive?"0 0 16px rgba(90,148,123,0.15)":"none" }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:8,fontFamily:"'League Spartan',sans-serif",color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4 }}>Group {m.gKey}</div>
+          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+            <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1,justifyContent:"flex-end" }}>
+              {m.home}<Flag team={m.home} size={14} />
+            </span>
+            <div style={{ textAlign:"center",minWidth:60 }}>
+              {isLive && (
+                <div style={{ fontSize:8,color:C.green,fontFamily:"'League Spartan',sans-serif",fontWeight:700,letterSpacing:"0.1em",marginBottom:2 }} className="live-dot">● LIVE</div>
+              )}
+              <div style={{ fontSize:16,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:m.live.status==="FINISHED"?C.white:C.green }}>
+                {m.live.home !== null ? `${m.live.home} : ${m.live.away}` : "vs"}
+              </div>
+              {m.live.status==="FINISHED"&&<div style={{ fontSize:8,color:C.muted,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>FT</div>}
+              {m.kickoff&&<div style={{ fontSize:8,color:C.muted,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>{m.kickoff} ADT</div>}
+            </div>
+            <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1 }}>
+              <Flag team={m.away} size={14} />{m.away}
+            </span>
+          </div>
+        </div>
+        {m.user && m.user.home !== "" && (
+          <div style={{ textAlign:"right",flexShrink:0,borderLeft:`1px solid ${C.border}`,paddingLeft:12 }}>
+            <div style={{ fontSize:9,color:C.muted,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2 }}>Your Pick</div>
+            <div style={{ fontSize:14,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.muted }}>{m.user.home}:{m.user.away}</div>
+            {result && <div style={{ fontSize:8,color:ptColors[result],fontFamily:"'League Spartan',sans-serif",fontWeight:700,textTransform:"uppercase" }}>{result==="exact"?"+5":result==="correct"?"+3":"0"} pts</div>}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const toggleGroup = (g) => setOpenGroups(prev => ({ ...prev, [g]: !prev[g] }));
 
   return (
     <div className="fade-in">
+      {/* Header banner */}
       <div style={{
         background:`linear-gradient(135deg, ${C.greenDark} 0%, #031A0E 100%)`,
         border:`2px solid ${C.gold}`, borderRadius:10,
-        padding:"18px 20px", marginBottom:18,
+        padding:"18px 20px", marginBottom:20,
         display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:10,
         boxShadow:"0 0 24px rgba(196,159,75,0.08)",
       }}>
         <div>
           <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.gold,textTransform:"uppercase",letterSpacing:"0.06em",lineHeight:1.1 }}>
-            ★ Official Group Board ★
+            ★ Official Group Scores ★
           </div>
           <div style={{ fontSize:11,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif",marginTop:6,lineHeight:1.6 }}>
             The real World Cup — built only from completed matches, not predictions. Updates automatically as results come in.
@@ -541,14 +679,95 @@ function ActualTab({ liveScores, lastUpdated }) {
         {lastUpdated && <div style={{ fontSize:10,color:C.dim,fontFamily:"'Quicksand',sans-serif",whiteSpace:"nowrap" }}>Updated {lastUpdated}</div>}
       </div>
 
+      {/* ── ISOLATED: Live Now ── */}
+      {inPlay.length > 0 && (
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.green,fontWeight:900,letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:12,display:"flex",alignItems:"center",gap:7 }}>
+            <span className="live-dot" style={{ width:8,height:8,borderRadius:"50%",background:C.green,display:"inline-block" }} />
+            Live Now
+          </div>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
+            {inPlay.map(m=><MatchCard key={m.key} m={m} />)}
+          </div>
+        </div>
+      )}
+
+      {/* ── ISOLATED: Up Next (soonest upcoming matchday) ── */}
+      {upNextMatches.length > 0 && (
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.gold,fontWeight:900,letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:4 }}>
+            Up Next
+          </div>
+          <div style={{ fontFamily:"'Quicksand',sans-serif",fontSize:11,color:C.mutedLight,marginBottom:12 }}>
+            {dayFormatter.format(new Date(upNextMatches[0].live.utcDate))}
+          </div>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
+            {upNextMatches.map(m=><MatchCard key={m.key} m={m} />)}
+          </div>
+        </div>
+      )}
+
+      {inPlay.length === 0 && upNextMatches.length === 0 && (
+        <div style={{ textAlign:"center",padding:"20px 16px",color:C.mutedLight,fontFamily:"'Quicksand',sans-serif",fontSize:13,border:`1px dashed ${C.border}`,borderRadius:8,marginBottom:20 }}>
+          No live or upcoming matches right now — check back soon.
+        </div>
+      )}
+
+      {/* ── ACCORDION: Finished matches ── */}
+      {finished.length > 0 && (
+        <div style={{ marginBottom:14 }}>
+          <button onClick={()=>setShowFinished(!showFinished)} style={{
+            width:"100%", background:C.surface, border:`1px solid ${C.border}`, borderRadius:8,
+            padding:"12px 16px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center",
+            fontFamily:"'League Spartan',sans-serif",
+          }}>
+            <span style={{ fontSize:11, color:C.white, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase" }}>
+              Finished Matches <span style={{ color:C.muted, fontWeight:500 }}>({finished.length})</span>
+            </span>
+            <span style={{ fontSize:11, color:C.green }}>{showFinished ? "▲ Hide" : "▼ Show"}</span>
+          </button>
+          {showFinished && (
+            <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10, marginTop:12 }}>
+              {finished.slice().reverse().map(m=><MatchCard key={m.key} m={m} compact />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ACCORDION: Later upcoming days ── */}
+      {laterUpcomingByDay.length > 0 && (
+        <div style={{ marginBottom:24 }}>
+          {laterUpcomingByDay.map(group => (
+            <div key={group.dayKey} style={{ marginBottom:10 }}>
+              <button onClick={()=>toggleGroup(group.dayKey)} style={{
+                width:"100%", background:C.surface, border:`1px solid ${C.border}`, borderRadius:8,
+                padding:"10px 16px", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center",
+                fontFamily:"'League Spartan',sans-serif",
+              }}>
+                <span style={{ fontSize:11, color:C.white, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase" }}>
+                  {group.label} <span style={{ color:C.muted, fontWeight:500 }}>({group.matches.length})</span>
+                </span>
+                <span style={{ fontSize:11, color:C.green }}>{openGroups[group.dayKey] ? "▲" : "▼"}</span>
+              </button>
+              {openGroups[group.dayKey] && (
+                <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10, marginTop:10 }}>
+                  {group.matches.map(m=><MatchCard key={m.key} m={m} compact />)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {!anyFinished && (
-        <div style={{ textAlign:"center",padding:"30px 16px",color:C.muted,fontFamily:"'Quicksand',sans-serif",fontSize:13,border:`1px dashed ${C.border}`,borderRadius:8,marginBottom:20 }}>
-          No matches finished yet — tables will populate as results come in.
+        <div style={{ textAlign:"center",padding:"24px 16px",color:C.mutedLight,fontFamily:"'Quicksand',sans-serif",fontSize:13,border:`1px dashed ${C.border}`,borderRadius:8,marginBottom:20 }}>
+          No matches finished yet — group standings will populate as results come in.
         </div>
       )}
 
       <ThirdPlaceTracker scores={EMPTY} liveScores={liveScores} />
 
+      {/* ── Group standings grid ── */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",gap:12 }}>
         {Object.keys(GROUPS).map(g => {
           const standings = calcStandings(g, EMPTY, liveScores);
@@ -726,135 +945,6 @@ function ThirdPlaceTracker({ scores, liveScores }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ── Live Results Tab ──────────────────────────────────────────────────────────
-function ResultsTab({ liveScores, scores, lastUpdated }) {
-  const allMatches = [];
-  Object.keys(GROUPS).forEach(gKey => {
-    GROUPS[gKey].matches.forEach(([home,away],idx) => {
-      const key = `${gKey}-${idx}`;
-      const live = liveScores[key];
-      const user = scores[key];
-      if (live) allMatches.push({ gKey, idx, key, home, away, live, user });
-    });
-  });
-
-  const inPlay = allMatches.filter(m=>m.live.status==="IN_PLAY"||m.live.status==="PAUSED");
-  const finished = allMatches.filter(m=>m.live.status==="FINISHED");
-  const upcoming = allMatches
-    .filter(m=>m.live.status==="SCHEDULED"||m.live.status==="TIMED")
-    .filter(m=>m.live.utcDate)
-    .sort((a,b)=>new Date(a.live.utcDate)-new Date(b.live.utcDate));
-
-  // Group upcoming matches by ADT (Atlantic Daylight Time, UTC-3) calendar date
-  const ADT_TZ = "America/Halifax";
-  const dayFormatter = new Intl.DateTimeFormat("en-US", { timeZone:ADT_TZ, weekday:"long", month:"long", day:"numeric" });
-  const timeFormatter = new Intl.DateTimeFormat("en-US", { timeZone:ADT_TZ, hour:"numeric", minute:"2-digit" });
-  const dateKeyFormatter = new Intl.DateTimeFormat("en-CA", { timeZone:ADT_TZ, year:"numeric", month:"2-digit", day:"2-digit" });
-
-  const upcomingByDay = [];
-  upcoming.forEach(m => {
-    const d = new Date(m.live.utcDate);
-    const dayKey = dateKeyFormatter.format(d);
-    let group = upcomingByDay.find(g=>g.dayKey===dayKey);
-    if (!group) {
-      group = { dayKey, label: dayFormatter.format(d), matches: [] };
-      upcomingByDay.push(group);
-    }
-    group.matches.push({ ...m, kickoff: timeFormatter.format(d) });
-  });
-
-  const MatchCard = ({ m }) => {
-    const result = scoreResult(m.user, m.live);
-    const ptColors = { exact:C.exact, correct:C.correct, wrong:C.wrong };
-    return (
-      <div style={{ background:C.surface,border:`1px solid ${m.live.status==="IN_PLAY"||m.live.status==="PAUSED"?C.green:C.border}`,borderRadius:6,padding:"12px 14px",display:"flex",alignItems:"center",gap:10 }}>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:8,fontFamily:"'League Spartan',sans-serif",color:C.muted,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4 }}>Group {m.gKey}</div>
-          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-            <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1,justifyContent:"flex-end" }}>
-              {m.home}<Flag team={m.home} size={14} />
-            </span>
-            <div style={{ textAlign:"center",minWidth:60 }}>
-              {(m.live.status==="IN_PLAY"||m.live.status==="PAUSED") && (
-                <div style={{ fontSize:8,color:C.green,fontFamily:"'League Spartan',sans-serif",fontWeight:700,letterSpacing:"0.1em",marginBottom:2 }} className="live-dot">● LIVE</div>
-              )}
-              <div style={{ fontSize:16,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:m.live.status==="FINISHED"?C.white:C.green }}>
-                {m.live.home !== null ? `${m.live.home} : ${m.live.away}` : "vs"}
-              </div>
-              {m.live.status==="FINISHED"&&<div style={{ fontSize:8,color:C.muted,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>FT</div>}
-              {m.kickoff&&<div style={{ fontSize:8,color:C.muted,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em" }}>{m.kickoff} ADT</div>}
-            </div>
-            <span style={{ display:"flex",alignItems:"center",gap:5,fontSize:12,fontFamily:"'Quicksand',sans-serif",color:C.white,flex:1 }}>
-              <Flag team={m.away} size={14} />{m.away}
-            </span>
-          </div>
-        </div>
-        {m.user && m.user.home !== "" && (
-          <div style={{ textAlign:"right",flexShrink:0,borderLeft:`1px solid ${C.border}`,paddingLeft:12 }}>
-            <div style={{ fontSize:9,color:C.muted,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:2 }}>Your Pick</div>
-            <div style={{ fontSize:14,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.muted }}>{m.user.home}:{m.user.away}</div>
-            {result && <div style={{ fontSize:8,color:ptColors[result],fontFamily:"'League Spartan',sans-serif",fontWeight:700,textTransform:"uppercase" }}>{result==="exact"?"+5":result==="correct"?"+3":"0"} pts</div>}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  if (allMatches.length === 0) {
-    return (
-      <div className="fade-in" style={{ textAlign:"center",padding:40,color:C.muted,fontFamily:"'Quicksand',sans-serif",fontSize:13 }}>
-        <div style={{ color:C.green,fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,textTransform:"uppercase",marginBottom:8 }}>Live Results</div>
-        <p>Results will appear here as matches kick off. Group stage begins June 11, 2026.</p>
-        {lastUpdated && <p style={{ marginTop:8,fontSize:11,color:C.dim }}>Last checked: {lastUpdated}</p>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="fade-in">
-      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20 }}>
-        <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.gold,fontWeight:700 }}>Live Results & Your Predictions</div>
-        {lastUpdated && <div style={{ fontSize:10,color:C.dim,fontFamily:"'Quicksand',sans-serif" }}>Updated {lastUpdated}</div>}
-      </div>
-
-      {inPlay.length > 0 && (
-        <div style={{ marginBottom:24 }}>
-          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,color:C.green,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:12,display:"flex",alignItems:"center",gap:6 }}>
-            <span className="live-dot" style={{ width:6,height:6,borderRadius:"50%",background:C.green,display:"inline-block" }} />
-            In Play
-          </div>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
-            {inPlay.map(m=><MatchCard key={m.key} m={m} />)}
-          </div>
-        </div>
-      )}
-
-      {finished.length > 0 && (
-        <div style={{ marginBottom:24 }}>
-          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,color:C.muted,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:12 }}>Finished</div>
-          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
-            {finished.map(m=><MatchCard key={m.key} m={m} />)}
-          </div>
-        </div>
-      )}
-
-      {upcomingByDay.length > 0 && (
-        <div>
-          <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,color:C.muted,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:12 }}>Upcoming</div>
-          {upcomingByDay.map(group => (
-            <div key={group.dayKey} style={{ marginBottom:20 }}>
-              <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.gold,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8 }}>{group.label}</div>
-              <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
-                {group.matches.map(m=><MatchCard key={m.key} m={m} />)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -1084,7 +1174,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
           Full Knockout Bracket
         </div>
         <p style={{ fontSize:12,color:C.muted,fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
-          Pick winners for each round. R32 populates from group stage results. Subsequent rounds populate as you make your picks. Tap a team to select them as your winner. Your Final pick syncs with the Overview tab.
+          Pick winners for each round. R32 populates from group stage results. Subsequent rounds populate as you make your picks. Tap a team to select them as your winner. Your Final pick syncs with the Your Tournament Stats tab.
         </p>
       </div>
 
@@ -1350,7 +1440,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                   Complete your Semifinal picks to choose the World Cup Champion here.
                 </div>
                 <div style={{ marginTop:10, fontSize:11, color:C.dim, fontFamily:"'Quicksand',sans-serif" }}>
-                  Or pick directly in the <span style={{ color:C.gold }}>Overview</span> tab — they sync.
+                  Or pick directly in the <span style={{ color:C.gold }}>Your Tournament Stats</span> tab — they sync.
                 </div>
               </div>
             )}
@@ -1361,7 +1451,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
   );
 }
 
-// ── Champion Tab ──────────────────────────────────────────────────────────────
+// ── Your Tournament Stats — Personal Stats & Awards Hub ───────────────────────
 function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, setTab }) {
   const champCode = TEAM_FLAGS[champion];
   const stats = calcUserStats(scores, liveScores || {}, champion, knockoutPicks || {});
@@ -1371,7 +1461,6 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
     id: parseInt(id), team, flag: TEAM_FLAGS[team]
   }));
 
-  // Group bracket picks by round
   const r32Picks = allPicks.filter(p => p.id >= 73 && p.id <= 88);
   const r16Picks = allPicks.filter(p => p.id >= 89 && p.id <= 96);
   const qfPicks = allPicks.filter(p => p.id >= 97 && p.id <= 100);
@@ -1379,79 +1468,50 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
   const finalPick = allPicks.find(p => p.id === 104);
   const thirdPick = allPicks.find(p => p.id === 103);
 
-  // Fun stats — most-picked team across the bracket
   const teamCounts = {};
   allPicks.forEach(p => { teamCounts[p.team] = (teamCounts[p.team] || 0) + 1; });
   const mostPicked = Object.entries(teamCounts).sort((a,b) => b[1] - a[1])[0];
 
-  // Total predictions submitted (group scores + knockout picks)
   const groupPredictionsCount = Object.values(scores || {}).filter(s => s.home !== "" && s.away !== "").length;
   const knockoutPicksCount = allPicks.length;
 
-  const awardCount = [
-    stats.exact >= 1, (stats.exact + stats.correct) >= 1,
-    stats.avgDiff !== null && parseFloat(stats.avgDiff) <= 1.5,
-    stats.longestStreak >= 3, stats.heartbreakers >= 1,
-    stats.boldCalls >= 1, stats.goalfests >= 1, stats.realist >= 1,
-    stats.groupWinnersHit >= 1, stats.perfectGroups >= 1,
-    stats.defensiveCalls >= 1, stats.firstMatchExact,
-    stats.longestStreak >= 5,
-  ].filter(Boolean).length;
-
-  if (!champion) {
-    // No champion picked yet — direct the user to the Bracket tab
-    return (
-      <div className="fade-in" style={{ maxWidth:560, margin:"0 auto" }}>
-        <div style={{
-          background:`linear-gradient(135deg, ${C.greenDeep} 0%, #000 60%, ${C.greenDeep} 100%)`,
-          border:`2px solid ${C.green}`, borderRadius:12,
-          padding:"40px 28px", textAlign:"center", position:"relative", overflow:"hidden",
-        }}>
-          <div style={{
-            position:"absolute", top:"50%", left:"50%",
-            transform:"translate(-50%,-50%)", width:400, height:300,
-            background:"radial-gradient(ellipse, rgba(196,159,75,0.08) 0%, transparent 70%)",
-            pointerEvents:"none",
-          }} />
-          <div className="trophy-glow" style={{ color:C.gold, width:72, height:72, margin:"0 auto 18px", position:"relative" }} dangerouslySetInnerHTML={{ __html:TROPHY_SVG }} />
-          <div style={{
-            fontFamily:"'League Spartan',sans-serif", fontSize:"clamp(22px, 5vw, 32px)",
-            fontWeight:900, color:C.white, textTransform:"uppercase",
-            letterSpacing:"-0.01em", marginBottom:10, position:"relative",
-          }}>
-            No Champion Yet
-          </div>
-          <p style={{
-            fontFamily:"'Quicksand',sans-serif", fontSize:13, color:C.mutedLight,
-            marginBottom:24, lineHeight:1.7, position:"relative",
-            maxWidth:380, marginLeft:"auto", marginRight:"auto",
-          }}>
-            Your champion is whoever you pick to win <span style={{ color:C.gold, fontWeight:600 }}>The Final</span>. Complete your bracket predictions to crown them here.
-          </p>
-          <button onClick={() => setTab && setTab("bracket")} style={{
-            background:C.green, border:"none", borderRadius:6,
-            color:"#fff", fontFamily:"'League Spartan',sans-serif",
-            fontSize:12, fontWeight:700, letterSpacing:"0.12em",
-            textTransform:"uppercase", padding:"12px 28px",
-            cursor:"pointer", position:"relative",
-          }}>Go to The Bracket →</button>
-        </div>
-      </div>
-    );
-  }
+  // ── Award definitions (shared shape with Leaderboard's "who holds it" view) ──
+  const awards = [
+    { id:"sharpshooter", title:"Sharpshooter", subtitle:"Most exact scorelines called", icon:"🎯", value:stats.exact, suffix:"exact", unlocked:stats.exact >= 1 },
+    { id:"pundit", title:"The Pundit", subtitle:"Most correct match results overall", icon:"📊", value:stats.exact + stats.correct, suffix:"correct", unlocked:(stats.exact + stats.correct) >= 1 },
+    { id:"mathematician", title:"Goal Mathematician", subtitle:"Smallest average scoreline error", icon:"📐", value:stats.avgDiff ?? "—", suffix:"avg off", unlocked:stats.avgDiff !== null && parseFloat(stats.avgDiff) <= 1.5 },
+    { id:"streak", title:"Streak Master", subtitle:"Longest run of correct picks in a row", icon:"🔥", value:stats.longestStreak, suffix:"streak", unlocked:stats.longestStreak >= 3 },
+    { id:"crystalball", title:"Crystal Ball", subtitle:"5+ exact scores back to back", icon:"🔯", value:stats.longestStreak, suffix:"streak", unlocked:stats.longestStreak >= 5 },
+    { id:"heartbreak", title:"Heartbreak Kid", subtitle:"Picks that missed by just one goal", icon:"💔", value:stats.heartbreakers, suffix:"close calls", unlocked:stats.heartbreakers >= 1 },
+    { id:"bold", title:"Bold Caller", subtitle:"Exact picks on 3+ goal blowouts", icon:"⚡", value:stats.boldCalls, suffix:"bold", unlocked:stats.boldCalls >= 1 },
+    { id:"goalfest", title:"Goal Gambler", subtitle:"Correct calls on 3+ goal matches", icon:"⚽", value:stats.goalfests, suffix:"goalfests", unlocked:stats.goalfests >= 1 },
+    { id:"realist", title:"The Realist", subtitle:"Exact 1-0 / 0-1 grinder predictions", icon:"🛡️", value:stats.realist, suffix:"grinders", unlocked:stats.realist >= 1 },
+    { id:"defensive", title:"Defensive Mastermind", subtitle:"Exact on 0-0, 1-0, or 0-1 results", icon:"🧱", value:stats.defensiveCalls, suffix:"clean", unlocked:stats.defensiveCalls >= 1 },
+    { id:"whisperer", title:"Group Whisperer", subtitle:"Group winners correctly called", icon:"🔮", value:stats.groupWinnersHit, suffix:"of 12", unlocked:stats.groupWinnersHit >= 1 },
+    { id:"sweeper", title:"Group Sweeper", subtitle:"Every match in a group called right", icon:"🧹", value:stats.perfectGroups, suffix:"perfect", unlocked:stats.perfectGroups >= 1 },
+    { id:"architect", title:"Group Architect", subtitle:"Perfect 1st-4th group order calls", icon:"🏗️", value:stats.perfectGroupOrders, suffix:"perfect", unlocked:stats.perfectGroupOrders >= 1 },
+    { id:"firstblood", title:"First Blood", subtitle:"Exact score on the tournament opener", icon:"🩸", value:stats.firstMatchExact ? "✓" : "—", suffix:stats.firstMatchExact ? "nailed it" : "Match A-0", unlocked:stats.firstMatchExact },
+    { id:"chaos", title:"Chaos Theory", subtitle:"Correctly called draws", icon:"🌀", value:stats.correctDraws, suffix:"draws", unlocked:stats.correctDraws >= 1 },
+    { id:"ironwall", title:"Iron Wall", subtitle:"Fewest goals conceded on correct picks", icon:"🧊", value:stats.ironWallAvg ?? "—", suffix:"avg conceded", unlocked:stats.ironWallAvg !== null && parseFloat(stats.ironWallAvg) <= 1 },
+    { id:"comeback", title:"Comeback Trail", subtitle:"Points earned across your last 5 results", icon:"📈", value:stats.comebackPts, suffix:"pts", unlocked:stats.comebackPts >= 10 },
+    { id:"specialist", title:"The Specialist", subtitle:"Your sharpest group — hit rate", icon:"🧠", value:stats.specialistGroup ? `Grp ${stats.specialistGroup}` : "—", suffix:stats.specialistGroup ? `${stats.specialistRate}% hit` : "no data", unlocked:!!stats.specialistGroup && stats.specialistRate >= 50 },
+    { id:"goals", title:"Total Goals Predicted", subtitle:"Sum of every goal you've called", icon:"🥅", value:stats.totalGoalsPredicted, suffix:"goals", unlocked:stats.totalGoalsPredicted >= 1 },
+    { id:"oracle", title:"The Oracle", subtitle:"Picked the actual champion", icon:"👁️", value:champion || "—", suffix:champion ? "selected" : "no pick", unlocked:false },
+    { id:"laughs", title:"Last Laugh", subtitle:"Exact score on the Final itself", icon:"🏆", value:knockoutPicks?.[104] || "—", suffix:knockoutPicks?.[104] ? "picked" : "no pick", unlocked:false },
+  ];
+  const awardCount = awards.filter(a => a.unlocked).length;
 
   return (
-    <div className="fade-in" style={{ maxWidth:760, margin:"0 auto" }}>
+    <div className="fade-in" style={{ maxWidth:880, margin:"0 auto" }}>
 
-      {/* ── HERO: Big flag + champion display ── */}
+      {/* ── HEADER ── */}
       <div style={{
-        background:`linear-gradient(135deg, ${C.greenDeep} 0%, #000 50%, ${C.greenDeep} 100%)`,
+        background:`linear-gradient(135deg, ${C.greenDeep} 0%, #000 55%, ${C.greenDeep} 100%)`,
         border:`2px solid ${C.gold}`, borderRadius:14,
-        padding:"36px 28px", textAlign:"center", marginBottom:24,
+        padding:"32px 28px", textAlign:"center", marginBottom:24,
         position:"relative", overflow:"hidden",
         boxShadow:`0 0 50px rgba(196,159,75,0.15)`,
       }}>
-        {/* Background trophy watermark */}
         <div style={{
           position:"absolute", right:-40, top:-30,
           color:"rgba(196,159,75,0.05)", width:280, height:280,
@@ -1460,105 +1520,96 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
 
         <div style={{ position:"relative" }}>
           <div style={{
-            fontFamily:"'League Spartan',sans-serif", fontSize:10,
-            color:C.gold, fontWeight:700, letterSpacing:"0.22em",
-            textTransform:"uppercase", marginBottom:14,
-          }}>
-            ◆ Your Champion Pick ◆
-          </div>
-
-          {/* MASSIVE flag */}
-          {champCode && (
-            <div style={{ marginBottom:18, display:"inline-block", position:"relative" }}>
-              <div style={{
-                position:"absolute", inset:-20,
-                background:`radial-gradient(ellipse, rgba(196,159,75,0.25) 0%, transparent 70%)`,
-                filter:"blur(20px)",
-              }} />
-              <img
-                src={`https://flagcdn.com/256x192/${champCode}.png`}
-                alt={champion}
-                style={{
-                  width:"min(280px, 70vw)",
-                  height:"auto", aspectRatio:"4/3",
-                  objectFit:"cover", borderRadius:8,
-                  boxShadow:`0 0 40px rgba(196,159,75,0.3), 0 12px 32px rgba(0,0,0,0.5)`,
-                  border:`2px solid ${C.gold}`,
-                  position:"relative",
-                }}
-                onError={e=>{e.target.src=`https://flagcdn.com/h120/${champCode}.png`;}}
-              />
-            </div>
-          )}
-
-          {/* Champion name + trophy */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:14, marginBottom:8 }}>
-            <div className="trophy-glow" style={{ color:C.gold, width:36, height:36 }} dangerouslySetInnerHTML={{ __html:TROPHY_SVG }} />
-            <div style={{
-              fontFamily:"'League Spartan',sans-serif",
-              fontSize:"clamp(28px, 6vw, 44px)", fontWeight:900,
-              color:C.white, textTransform:"uppercase",
-              letterSpacing:"-0.02em",
-              textShadow:`0 0 24px rgba(196,159,75,0.4)`,
-            }}>
-              {champion}
-            </div>
-            <div className="trophy-glow" style={{ color:C.gold, width:36, height:36, transform:"scaleX(-1)" }} dangerouslySetInnerHTML={{ __html:TROPHY_SVG }} />
-          </div>
+            fontFamily:"'League Spartan',sans-serif", fontSize:11,
+            color:C.gold, fontWeight:700, letterSpacing:"0.24em",
+            textTransform:"uppercase", marginBottom:10,
+          }}>◆ Your Tournament Stats ◆</div>
 
           <div style={{
-            fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.muted,
-            letterSpacing:"0.18em", textTransform:"uppercase", marginBottom:18,
+            fontFamily:"'League Spartan',sans-serif",
+            fontSize:"clamp(26px, 5vw, 38px)", fontWeight:900,
+            color:C.white, textTransform:"uppercase",
+            letterSpacing:"-0.01em", marginBottom:6,
+          }}>{userName || "Your"} Run So Far</div>
+
+          <p style={{
+            fontFamily:"'Quicksand',sans-serif", fontSize:13, color:C.mutedLight,
+            lineHeight:1.7, maxWidth:460, margin:"0 auto",
           }}>
-            Your 2026 World Cup Champion
-          </div>
+            Every prediction, every point, every accolade earned — all in one place.
+          </p>
 
-          <button onClick={() => setTab && setTab("bracket")} style={{
-            background:"none", border:`1px solid ${C.border}`, borderRadius:6,
-            color:C.muted, fontFamily:"'League Spartan',sans-serif",
-            fontSize:11, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase",
-            padding:"9px 22px", cursor:"pointer",
-          }}>Change in The Bracket →</button>
-
-          <div style={{ marginTop:14, fontSize:10, color:C.dim, fontFamily:"'Quicksand',sans-serif" }}>
-            Picks sync between Overview and The Bracket
-          </div>
+          {/* Champion mini-display */}
+          {champion ? (
+            <div style={{ marginTop:22, display:"inline-flex", alignItems:"center", gap:10, background:"rgba(196,159,75,0.1)", border:`1px solid rgba(196,159,75,0.3)`, borderRadius:30, padding:"8px 18px" }}>
+              {champCode && <img src={FLAG_URL(champCode)} alt={champion} style={{ width:24, height:18, objectFit:"cover", borderRadius:2 }} />}
+              <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:12, color:C.gold, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>
+                Backing {champion} to win it all
+              </span>
+            </div>
+          ) : (
+            <button onClick={() => setTab && setTab("bracket")} style={{
+              marginTop:22, background:C.green, border:"none", borderRadius:30,
+              color:"#fff", fontFamily:"'League Spartan',sans-serif",
+              fontSize:11, fontWeight:700, letterSpacing:"0.1em",
+              textTransform:"uppercase", padding:"10px 22px", cursor:"pointer",
+            }}>Pick Your Champion in The Bracket →</button>
+          )}
         </div>
       </div>
 
-      {/* ── PROFILE STATS HEADER ── */}
-      <div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
-        <div style={{ width:20, height:1, background:C.green }} />
-        <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:11, fontWeight:900, color:C.gold, textTransform:"uppercase", letterSpacing:"0.14em" }}>
-          {userName ? `${userName}'s Profile` : "Your Profile"}
-        </div>
-        <div style={{ flex:1, height:1, background:C.border }} />
-      </div>
-
-      {/* Stats grid */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap:10, marginBottom:24 }}>
+      {/* ── HEADLINE STAT STRIP ── */}
+      <div style={{
+        display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(130px, 1fr))", gap:10, marginBottom:28,
+      }}>
         {[
-          { label:"Total Points", value:stats.totalPts, color:C.gold, icon:"⭐" },
-          { label:"Predictions", value:groupPredictionsCount, color:C.white, icon:"📋" },
+          { label:"Combined Points", value:stats.combinedTotalPts, color:C.gold, icon:"⭐", big:true },
+          { label:"Match Points", value:stats.totalPts, color:C.white, icon:"📋" },
+          { label:"Group Order Pts", value:stats.groupOrderPoints, color:C.green, icon:"🏗️" },
           { label:"Accuracy", value:`${stats.accuracy}%`, color:C.green, icon:"🎯" },
-          { label:"Awards Won", value:`${awardCount}/13`, color:C.gold, icon:"🏅" },
+          { label:"Awards Won", value:`${awardCount}/${awards.length}`, color:C.gold, icon:"🏅" },
           { label:"Exact Scores", value:stats.exact, color:C.exact, icon:"💯" },
-          { label:"Bracket Picks", value:knockoutPicksCount, color:C.white, icon:"⚽" },
         ].map(stat => (
           <div key={stat.label} style={{
-            background:C.surface, border:`1px solid ${C.border}`,
-            borderRadius:8, padding:"16px 12px", textAlign:"center",
+            background:stat.big ? `linear-gradient(135deg, rgba(196,159,75,0.15), ${C.surface})` : C.surface,
+            border:`1px solid ${stat.big ? "rgba(196,159,75,0.4)" : C.border}`,
+            borderRadius:8, padding:stat.big ? "20px 14px" : "16px 12px", textAlign:"center",
           }}>
-            <div style={{ fontSize:18, marginBottom:4 }}>{stat.icon}</div>
+            <div style={{ fontSize:stat.big ? 22 : 18, marginBottom:4 }}>{stat.icon}</div>
             <div style={{
-              fontFamily:"'League Spartan',sans-serif", fontSize:26, fontWeight:900,
+              fontFamily:"'League Spartan',sans-serif", fontSize:stat.big ? 32 : 26, fontWeight:900,
               color:stat.color, lineHeight:1,
             }}>{stat.value}</div>
             <div style={{
               fontFamily:"'League Spartan',sans-serif", fontSize:9,
-              color:C.muted, letterSpacing:"0.12em", textTransform:"uppercase",
+              color:C.mutedLight, letterSpacing:"0.1em", textTransform:"uppercase",
               marginTop:6, fontWeight:700,
             }}>{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── DETAILED STATS ── */}
+      <SectionHeader title="Prediction Breakdown" />
+      <div style={{
+        display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(150px, 1fr))", gap:10, marginBottom:28,
+      }}>
+        {[
+          { label:"Predictions Made", value:groupPredictionsCount },
+          { label:"Correct Results", value:stats.correct, color:C.correct },
+          { label:"Wrong Picks", value:stats.wrong, color:C.wrong },
+          { label:"Avg Goal Error", value:stats.avgDiff ?? "—" },
+          { label:"Best Streak", value:stats.longestStreak },
+          { label:"Perfect Groups (Order)", value:stats.perfectGroupOrders, color:C.gold },
+          { label:"Perfect Groups (Score)", value:stats.perfectGroups },
+          { label:"Bracket Picks Made", value:knockoutPicksCount },
+        ].map(s => (
+          <div key={s.label} style={{
+            background:C.surface, border:`1px solid ${C.border}`,
+            borderRadius:8, padding:"12px 14px",
+          }}>
+            <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, fontWeight:900, color:s.color || C.white }}>{s.value}</div>
+            <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, color:C.mutedLight, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:4, fontWeight:700 }}>{s.label}</div>
           </div>
         ))}
       </div>
@@ -1566,17 +1617,10 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
       {/* ── BRACKET JOURNEY ── */}
       {(r32Picks.length > 0 || r16Picks.length > 0 || finalPick) && (
         <>
-          <div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:20, height:1, background:C.green }} />
-            <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:11, fontWeight:900, color:C.gold, textTransform:"uppercase", letterSpacing:"0.14em" }}>
-              Your Bracket Journey
-            </div>
-            <div style={{ flex:1, height:1, background:C.border }} />
-          </div>
-
+          <SectionHeader title="Your Bracket Journey" />
           <div style={{
             background:C.surface, border:`1px solid ${C.border}`,
-            borderRadius:8, padding:"18px 18px", marginBottom:24,
+            borderRadius:8, padding:"18px 18px", marginBottom:28,
           }}>
             {[
               { label:"Round of 32", picks:r32Picks, max:16 },
@@ -1586,20 +1630,14 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
               { label:"Third Place", picks:thirdPick ? [thirdPick] : [], max:1 },
               { label:"Final Champion", picks:finalPick ? [finalPick] : [], max:1, highlight:true },
             ].map(round => (
-              <div key={round.label} style={{ marginBottom:14, lastChild:{marginBottom:0} }}>
-                <div style={{
-                  display:"flex", justifyContent:"space-between", alignItems:"center",
-                  marginBottom:8,
-                }}>
+              <div key={round.label} style={{ marginBottom:14 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
                   <div style={{
                     fontFamily:"'League Spartan',sans-serif", fontSize:10,
-                    color:round.highlight ? C.gold : C.muted,
+                    color:round.highlight ? C.gold : C.mutedLight,
                     fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase",
                   }}>{round.label}</div>
-                  <div style={{
-                    fontFamily:"'League Spartan',sans-serif", fontSize:9,
-                    color:C.dim, letterSpacing:"0.1em",
-                  }}>{round.picks.length} / {round.max}</div>
+                  <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, color:C.mutedLight, letterSpacing:"0.1em" }}>{round.picks.length} / {round.max}</div>
                 </div>
                 {round.picks.length > 0 ? (
                   <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
@@ -1611,18 +1649,12 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
                         borderRadius:4, padding:"4px 9px",
                       }}>
                         {p.flag && <img src={FLAG_URL(p.flag)} alt={p.team} style={{ width:14, height:10, objectFit:"cover", borderRadius:2 }} />}
-                        <span style={{
-                          fontFamily:"'Quicksand',sans-serif", fontSize:11,
-                          color:round.highlight ? C.gold : C.white, fontWeight:600,
-                        }}>{p.team}</span>
+                        <span style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:round.highlight ? C.gold : C.white, fontWeight:600 }}>{p.team}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div style={{
-                    fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.dim,
-                    fontStyle:"italic",
-                  }}>No picks yet</div>
+                  <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.mutedLight, fontStyle:"italic" }}>No picks yet</div>
                 )}
               </div>
             ))}
@@ -1630,88 +1662,100 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
         </>
       )}
 
-      {/* ── FUN STATS / INSIGHTS ── */}
+      {/* ── AWARDS GRID ── */}
+      <SectionHeader title={`Awards Cabinet — ${awardCount}/${awards.length} Unlocked`} />
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:10, marginBottom:28 }}>
+        {awards.map(award => (
+          <div key={award.id} style={{
+            background: award.unlocked ? `linear-gradient(135deg, rgba(196,159,75,0.1), ${C.surface})` : C.surface,
+            border:`1px solid ${award.unlocked ? "rgba(196,159,75,0.35)" : C.border}`,
+            borderRadius:8, padding:"14px 16px",
+            opacity: award.unlocked ? 1 : 0.7,
+            position:"relative",
+          }}>
+            {award.unlocked && (
+              <div style={{
+                position:"absolute", top:8, right:8,
+                fontSize:8, color:C.gold, fontFamily:"'League Spartan',sans-serif",
+                fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase",
+                background:"rgba(196,159,75,0.15)", border:"1px solid rgba(196,159,75,0.4)",
+                borderRadius:3, padding:"2px 6px",
+              }}>Unlocked</div>
+            )}
+            <div style={{ fontSize:26, marginBottom:6 }}>{award.icon}</div>
+            <div style={{
+              fontFamily:"'League Spartan',sans-serif", fontSize:13, fontWeight:900,
+              color:award.unlocked ? C.gold : C.mutedLight, textTransform:"uppercase",
+              letterSpacing:"0.04em", marginBottom:3,
+            }}>{award.title}</div>
+            <div style={{
+              fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.mutedLight,
+              marginBottom:8, lineHeight:1.5,
+            }}>{award.subtitle}</div>
+            <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
+              <span style={{
+                fontFamily:"'League Spartan',sans-serif", fontSize:20, fontWeight:900,
+                color:award.unlocked ? C.white : C.mutedLight, lineHeight:1,
+              }}>{award.value}</span>
+              <span style={{
+                fontFamily:"'League Spartan',sans-serif", fontSize:9,
+                color:C.mutedLight, letterSpacing:"0.08em", textTransform:"uppercase", fontWeight:700,
+              }}>{award.suffix}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── INSIGHTS ── */}
       {(mostPicked || stats.longestStreak > 0 || stats.boldCalls > 0) && (
         <>
-          <div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
-            <div style={{ width:20, height:1, background:C.green }} />
-            <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:11, fontWeight:900, color:C.gold, textTransform:"uppercase", letterSpacing:"0.14em" }}>
-              Insights
-            </div>
-            <div style={{ flex:1, height:1, background:C.border }} />
-          </div>
-
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:10, marginBottom:24 }}>
+          <SectionHeader title="Insights" />
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(200px, 1fr))", gap:10, marginBottom:12 }}>
             {mostPicked && (
-              <div style={{
-                background:C.surface, border:`1px solid ${C.border}`,
-                borderRadius:8, padding:"14px 16px",
-              }}>
-                <div style={{ fontSize:18, marginBottom:6 }}>🏅</div>
-                <div style={{
-                  fontFamily:"'League Spartan',sans-serif", fontSize:10,
-                  color:C.muted, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4,
-                }}>Most Picked Team</div>
-                <div style={{
-                  fontFamily:"'League Spartan',sans-serif", fontSize:15,
-                  color:C.white, fontWeight:900, textTransform:"uppercase",
-                }}>{mostPicked[0]}</div>
-                <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.green, marginTop:2 }}>
-                  Picked {mostPicked[1]}x across bracket
-                </div>
-              </div>
+              <InsightCard icon="🏅" label="Most Picked Team" value={mostPicked[0]} sub={`Picked ${mostPicked[1]}x across bracket`} />
             )}
-
             {stats.longestStreak > 0 && (
-              <div style={{
-                background:C.surface, border:`1px solid ${C.border}`,
-                borderRadius:8, padding:"14px 16px",
-              }}>
-                <div style={{ fontSize:18, marginBottom:6 }}>🔥</div>
-                <div style={{
-                  fontFamily:"'League Spartan',sans-serif", fontSize:10,
-                  color:C.muted, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4,
-                }}>Hottest Streak</div>
-                <div style={{
-                  fontFamily:"'League Spartan',sans-serif", fontSize:22,
-                  color:C.gold, fontWeight:900,
-                }}>{stats.longestStreak}</div>
-                <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.green, marginTop:2 }}>
-                  Correct picks in a row
-                </div>
-              </div>
+              <InsightCard icon="🔥" label="Hottest Streak" value={stats.longestStreak} sub="Correct picks in a row" gold />
             )}
-
             {stats.boldCalls > 0 && (
-              <div style={{
-                background:C.surface, border:`1px solid ${C.border}`,
-                borderRadius:8, padding:"14px 16px",
-              }}>
-                <div style={{ fontSize:18, marginBottom:6 }}>⚡</div>
-                <div style={{
-                  fontFamily:"'League Spartan',sans-serif", fontSize:10,
-                  color:C.muted, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4,
-                }}>Boldest Calls Nailed
-                </div>
-                <div style={{
-                  fontFamily:"'League Spartan',sans-serif", fontSize:22,
-                  color:C.gold, fontWeight:900,
-                }}>{stats.boldCalls}</div>
-                <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.green, marginTop:2 }}>
-                  Exact picks · 3+ goal margin
-                </div>
-              </div>
+              <InsightCard icon="⚡" label="Boldest Calls Nailed" value={stats.boldCalls} sub="Exact picks · 3+ goal margin" gold />
+            )}
+            {stats.specialistGroup && (
+              <InsightCard icon="🧠" label="Your Best Group" value={`Group ${stats.specialistGroup}`} sub={`${stats.specialistRate}% hit rate`} />
             )}
           </div>
         </>
       )}
 
       <div style={{
-        textAlign:"center", marginTop:8,
-        fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.dim, lineHeight:1.6,
+        textAlign:"center", marginTop:16,
+        fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.mutedLight, lineHeight:1.6,
       }}>
-        See full awards & competition rankings on the Leaderboard tab.
+        See who's leading the competition overall on the Leaderboard tab.
       </div>
+    </div>
+  );
+}
+
+// Small reusable section header used throughout Your Tournament Stats
+function SectionHeader({ title }) {
+  return (
+    <div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
+      <div style={{ width:20, height:1, background:C.green }} />
+      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:11, fontWeight:900, color:C.gold, textTransform:"uppercase", letterSpacing:"0.14em" }}>{title}</div>
+      <div style={{ flex:1, height:1, background:C.border }} />
+    </div>
+  );
+}
+
+// Small reusable insight card
+function InsightCard({ icon, label, value, sub, gold }) {
+  return (
+    <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:"14px 16px" }}>
+      <div style={{ fontSize:18, marginBottom:6 }}>{icon}</div>
+      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, color:C.mutedLight, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:4 }}>{label}</div>
+      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:gold ? 22 : 15, color:gold ? C.gold : C.white, fontWeight:900, textTransform:gold ? "none" : "uppercase" }}>{value}</div>
+      <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.green, marginTop:2 }}>{sub}</div>
     </div>
   );
 }
@@ -1729,6 +1773,10 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
   let defensiveCalls = 0; // correct 0-0 or 1-0/0-1 picks
   let firstMatchExact = false;
   let perGroupTracker = {}; // {A: {total:0, correct:0}}
+  let goalsConcededOnCorrect = 0; // for Iron Wall — goals conceded by predicted team on correct picks
+  let correctDraws = 0; // Chaos Theory
+  let totalGoalsPredicted = 0; // Total Goals Predicted
+  let last5Results = []; // Comeback Trail — chronological list of recent scored results
 
   // Track which match index (chronological) we're on across all groups
   const allMatchKeys = [];
@@ -1744,11 +1792,19 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
       const key = `${gKey}-${idx}`;
       const user = userScores?.[key];
       const live = liveScores?.[key];
+
+      // Total Goals Predicted — counts every prediction made, scored or not
+      if (user && user.home !== "" && user.away !== "") {
+        const ph = parseInt(user.home), pa = parseInt(user.away);
+        if (!isNaN(ph) && !isNaN(pa)) totalGoalsPredicted += ph + pa;
+      }
+
       const r = scoreResult(user, live);
       if (!r) return;
 
       totalPts += SCORE_PTS[r];
       perGroupTracker[gKey].total++;
+      last5Results.push({ key, r, pts: SCORE_PTS[r] });
 
       // First Blood — exact score on the very first match of the tournament (A-0)
       if (key === "A-0" && r === "exact") firstMatchExact = true;
@@ -1767,11 +1823,16 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
         if ((live.home === 0 && live.away === 0) ||
             (live.home === 1 && live.away === 0) ||
             (live.home === 0 && live.away === 1)) defensiveCalls++;
+        // Chaos Theory — correctly called an exact draw (any scoreline, e.g. 2-2)
+        if (live.home === live.away) correctDraws++;
         currentStreak++;
         longestStreak = Math.max(longestStreak, currentStreak);
       } else if (r === "correct") {
         correct++;
         if ((live.home + live.away) >= 3) goalfests++;
+        // Chaos Theory also counts correctly calling a draw as the result (not exact score)
+        const ph = parseInt(user.home), pa = parseInt(user.away);
+        if (ph === pa && live.home === live.away) correctDraws++;
         currentStreak++;
         longestStreak = Math.max(longestStreak, currentStreak);
       } else {
@@ -1781,6 +1842,13 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
         const awayOff = Math.abs(pa - live.away);
         if (homeOff + awayOff === 1) heartbreakers++;
         currentStreak = 0;
+      }
+
+      // Iron Wall — on correct/exact picks, track goals conceded by the team you backed to win
+      if (r === "exact" || r === "correct") {
+        const ph = parseInt(user.home), pa = parseInt(user.away);
+        if (ph > pa) goalsConcededOnCorrect += live.away; // backed home, they conceded `away` goals
+        else if (pa > ph) goalsConcededOnCorrect += live.home; // backed away
       }
 
       const ph = parseInt(user.home), pa = parseInt(user.away);
@@ -1796,18 +1864,6 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
   // Group Whisperer — count groups where user predicted the actual 1st-place team correctly
   let groupWinnersHit = 0;
   Object.keys(GROUPS).forEach(gKey => {
-    // Calculate actual standings from live scores only
-    const liveOnly = {};
-    GROUPS[gKey].matches.forEach((_, idx) => {
-      const k = `${gKey}-${idx}`;
-      if (liveScores[k]?.status === "FINISHED") liveOnly[k] = liveScores[k];
-    });
-    const userOnly = {};
-    GROUPS[gKey].matches.forEach((_, idx) => {
-      const k = `${gKey}-${idx}`;
-      if (userScores[k]) userOnly[k] = userScores[k];
-    });
-    // Only count if group fully completed
     const allDone = GROUPS[gKey].matches.every((_, idx) => liveScores[`${gKey}-${idx}`]?.status === "FINISHED");
     if (allDone) {
       const actualStandings = calcStandings(gKey, {}, liveScores);
@@ -1816,11 +1872,35 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
     }
   });
 
-  // Group Stage Sweeper — got every match in a single group correct (3+ correct of 6)
+  // Group Stage Sweeper — got every match in a single group correct (6 of 6)
   let perfectGroups = 0;
   Object.keys(perGroupTracker).forEach(gKey => {
     if (perGroupTracker[gKey].total === 6 && perGroupTracker[gKey].correct === 6) perfectGroups++;
   });
+
+  // Group Architect — perfect GROUP ORDER predictions (all 4 slots), from the order-scoring engine
+  const groupOrderResult = calcTotalGroupOrderPoints(userScores, liveScores);
+
+  // The Specialist — group with the highest per-group hit rate (min 1 match scored)
+  let specialistGroup = null, specialistRate = 0;
+  Object.keys(perGroupTracker).forEach(gKey => {
+    const t = perGroupTracker[gKey];
+    if (t.total > 0) {
+      const rate = t.correct / t.total;
+      if (rate > specialistRate || (rate === specialistRate && specialistGroup === null)) {
+        specialistRate = rate;
+        specialistGroup = gKey;
+      }
+    }
+  });
+
+  // Comeback Trail — points earned across the last 5 scored matches (momentum)
+  const recentFive = last5Results.slice(-5);
+  const comebackPts = recentFive.reduce((sum, m) => sum + m.pts, 0);
+
+  // Iron Wall — average goals conceded by the team you backed, on picks you got right (lower = better defense reading)
+  const correctPicks = exact + correct;
+  const ironWallAvg = correctPicks > 0 ? (goalsConcededOnCorrect / correctPicks).toFixed(2) : null;
 
   return {
     exact, correct, wrong,
@@ -1828,6 +1908,15 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
     heartbreakers, boldCalls, goalfests, realist,
     longestStreak, totalPts,
     defensiveCalls, firstMatchExact, groupWinnersHit, perfectGroups,
+    // New stats
+    groupOrderPoints: groupOrderResult.total,
+    perfectGroupOrders: groupOrderResult.perfectCount,
+    groupsOrderScored: groupOrderResult.groupsScored,
+    correctDraws, totalGoalsPredicted,
+    comebackPts, comebackMatches: recentFive.length,
+    ironWallAvg, correctPicks,
+    specialistGroup, specialistRate: specialistGroup ? Math.round(specialistRate * 100) : 0,
+    combinedTotalPts: totalPts + groupOrderResult.total,
   };
 }
 
@@ -1858,7 +1947,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate real points from live scores
+  // Calculate real points from live scores (match points + group order points combined)
   const calcPoints = (userScores) => {
     let pts = 0;
     Object.keys(GROUPS).forEach(gKey => {
@@ -1868,7 +1957,8 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
         if(r) pts += SCORE_PTS[r];
       });
     });
-    return pts;
+    const orderResult = calcTotalGroupOrderPoints(userScores, liveScores);
+    return pts + orderResult.total;
   };
 
   if(loading) return <div style={{ color:C.muted,fontFamily:"'Quicksand',sans-serif",fontSize:13,padding:20 }}>Loading...</div>;
@@ -1883,7 +1973,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
   const enriched = workingEntries.map(e => {
     const userScores = e.name === userName ? scores : (e.scores || {});
     const pts = calcPoints(userScores);
-    return { ...e, pts };
+    return { ...e, pts, _scores: userScores };
   });
   const sorted = [...enriched].sort((a,b)=>b.pts-a.pts);
 
@@ -1897,26 +1987,51 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
 
   const medalColor = i => i === 0 ? C.gold : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : C.muted;
 
-  // Calculate my stats for awards
-  const myStats = calcUserStats(scores, liveScores, champion, knockoutPicks);
+  // ── Competitive award holders — compute every user's stats, find who's leading each category ──
+  const allUserStats = sorted.map(e => ({
+    name: e.name,
+    stats: calcUserStats(e._scores || {}, liveScores, e.champion, e.knockoutPicks || {}),
+  }));
 
-  // Build awards list with progress
-  const awards = [
-    { id:"sharpshooter", title:"Sharpshooter", subtitle:"Most exact scorelines", value:myStats.exact, suffix:"exact", icon:"🎯", unlocked:myStats.exact >= 1 },
-    { id:"pundit", title:"The Pundit", subtitle:"Correct results called", value:myStats.exact + myStats.correct, suffix:"correct", icon:"📊", unlocked:(myStats.exact + myStats.correct) >= 1 },
-    { id:"mathematician", title:"Goal Mathematician", subtitle:"Avg scoreline difference", value:myStats.avgDiff || "—", suffix:"off avg", icon:"📐", unlocked:myStats.avgDiff !== null && parseFloat(myStats.avgDiff) <= 1.5 },
-    { id:"streak", title:"Streak Master", subtitle:"Longest correct streak", value:myStats.longestStreak, suffix:"in a row", icon:"🔥", unlocked:myStats.longestStreak >= 3 },
-    { id:"heartbreak", title:"Heartbreak Kid", subtitle:"Off by just one goal", value:myStats.heartbreakers, suffix:"close calls", icon:"💔", unlocked:myStats.heartbreakers >= 1 },
-    { id:"bold", title:"Bold Caller", subtitle:"Exact picks · 3+ goal margin", value:myStats.boldCalls, suffix:"bold", icon:"⚡", unlocked:myStats.boldCalls >= 1 },
-    { id:"goalfest", title:"Goal Gambler", subtitle:"Correct on 3+ goal matches", value:myStats.goalfests, suffix:"goalfests", icon:"⚽", unlocked:myStats.goalfests >= 1 },
-    { id:"realist", title:"The Realist", subtitle:"Correct 1-0 / 0-1 picks", value:myStats.realist, suffix:"grinders", icon:"🛡️", unlocked:myStats.realist >= 1 },
-    { id:"whisperer", title:"Group Whisperer", subtitle:"Group winners correctly called", value:myStats.groupWinnersHit, suffix:"of 12", icon:"🔮", unlocked:myStats.groupWinnersHit >= 1 },
-    { id:"sweeper", title:"Group Sweeper", subtitle:"All 6 matches in a group correct", value:myStats.perfectGroups, suffix:"perfect", icon:"🧹", unlocked:myStats.perfectGroups >= 1 },
-    { id:"defensive", title:"Defensive Mastermind", subtitle:"Exact on 0-0, 1-0 or 0-1 matches", value:myStats.defensiveCalls, suffix:"clean", icon:"🧱", unlocked:myStats.defensiveCalls >= 1 },
-    { id:"firstblood", title:"First Blood", subtitle:"Exact score on tournament opener", value:myStats.firstMatchExact ? "✓" : "—", suffix:myStats.firstMatchExact ? "nailed it" : "Match A-0", icon:"🩸", unlocked:myStats.firstMatchExact },
-    { id:"crystalball", title:"Crystal Ball", subtitle:"5+ exact scores in a row", value:myStats.longestStreak, suffix:"streak", icon:"🔯", unlocked:myStats.longestStreak >= 5 },
-    { id:"oracle", title:"The Oracle", subtitle:"Picked the actual champion", value:champion || "—", suffix:champion ? "selected" : "no pick", icon:"👁️", unlocked:false }, // unlocked logic determined post-final
-    { id:"laughs", title:"Last Laugh", subtitle:"Exact score on the final", value:knockoutPicks?.[104] || "—", suffix:knockoutPicks?.[104] ? "picked" : "no pick", icon:"🏆", unlocked:false },
+  // For each award category, find the entry with the highest qualifying value (and confirm they actually hold it, i.e. value > 0)
+  function findLeader(getValue, higherIsBetter = true) {
+    let best = null;
+    allUserStats.forEach(u => {
+      const v = getValue(u.stats);
+      if (v === null || v === undefined || isNaN(v)) return;
+      if (best === null) { best = { name: u.name, value: v }; return; }
+      if (higherIsBetter ? v > best.value : v < best.value) best = { name: u.name, value: v };
+    });
+    return best;
+  }
+
+  const competitiveAwards = [
+    { id:"sharpshooter", title:"Sharpshooter", subtitle:"Most exact scorelines", icon:"🎯", suffix:"exact",
+      leader: findLeader(s => s.exact > 0 ? s.exact : null) },
+    { id:"pundit", title:"The Pundit", subtitle:"Most correct results overall", icon:"📊", suffix:"correct",
+      leader: findLeader(s => (s.exact + s.correct) > 0 ? s.exact + s.correct : null) },
+    { id:"mathematician", title:"Goal Mathematician", subtitle:"Smallest avg scoreline error", icon:"📐", suffix:"avg off",
+      leader: findLeader(s => s.avgDiff !== null ? parseFloat(s.avgDiff) : null, false) },
+    { id:"streak", title:"Streak Master", subtitle:"Longest correct streak", icon:"🔥", suffix:"streak",
+      leader: findLeader(s => s.longestStreak > 0 ? s.longestStreak : null) },
+    { id:"heartbreak", title:"Heartbreak Kid", subtitle:"Most near-misses (off by 1)", icon:"💔", suffix:"close calls",
+      leader: findLeader(s => s.heartbreakers > 0 ? s.heartbreakers : null) },
+    { id:"bold", title:"Bold Caller", subtitle:"Most exact 3+ goal blowouts called", icon:"⚡", suffix:"bold",
+      leader: findLeader(s => s.boldCalls > 0 ? s.boldCalls : null) },
+    { id:"whisperer", title:"Group Whisperer", subtitle:"Most group winners called correctly", icon:"🔮", suffix:"groups",
+      leader: findLeader(s => s.groupWinnersHit > 0 ? s.groupWinnersHit : null) },
+    { id:"sweeper", title:"Group Sweeper", subtitle:"Most perfect groups (all 6 matches)", icon:"🧹", suffix:"perfect",
+      leader: findLeader(s => s.perfectGroups > 0 ? s.perfectGroups : null) },
+    { id:"architect", title:"Group Architect", subtitle:"Most perfect group order calls", icon:"🏗️", suffix:"perfect orders",
+      leader: findLeader(s => s.perfectGroupOrders > 0 ? s.perfectGroupOrders : null) },
+    { id:"ironwall", title:"Iron Wall", subtitle:"Fewest goals conceded on correct picks", icon:"🧊", suffix:"avg conceded",
+      leader: findLeader(s => s.ironWallAvg !== null ? parseFloat(s.ironWallAvg) : null, false) },
+    { id:"chaos", title:"Chaos Theory", subtitle:"Most correctly called draws", icon:"🌀", suffix:"draws",
+      leader: findLeader(s => s.correctDraws > 0 ? s.correctDraws : null) },
+    { id:"comeback", title:"Comeback Trail", subtitle:"Best run over their last 5 results", icon:"📈", suffix:"pts",
+      leader: findLeader(s => s.comebackPts > 0 ? s.comebackPts : null) },
+    { id:"goals", title:"Total Goals Predicted", subtitle:"Most total goals called across all picks", icon:"🥅", suffix:"goals",
+      leader: findLeader(s => s.totalGoalsPredicted > 0 ? s.totalGoalsPredicted : null) },
   ];
 
   const leader = sorted[0];
@@ -2101,85 +2216,70 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
         })}
       </div>
 
-      {/* ── PERSONAL STATS / AWARDS ── */}
+      {/* ── AWARD HOLDERS — who's leading each category across the whole group ── */}
       <div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
         <div style={{ width:20, height:1, background:C.green }} />
         <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:11, fontWeight:900, color:C.gold, textTransform:"uppercase", letterSpacing:"0.14em" }}>
-          Your Stats & Awards
+          Award Leaders
         </div>
         <div style={{ flex:1, height:1, background:C.border }} />
       </div>
+      <p style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.mutedLight, marginBottom:16, lineHeight:1.6 }}>
+        Who's currently holding each title across the whole group. Check your own breakdown on the Your Tournament Stats tab.
+      </p>
 
-      {/* Stats summary cards */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(120px, 1fr))", gap:10, marginBottom:20 }}>
-        {[
-          { label:"Predictions", value:myStats.totalPredictions, color:C.white },
-          { label:"Accuracy", value:`${myStats.accuracy}%`, color:C.green },
-          { label:"Exact Scores", value:myStats.exact, color:C.exact },
-          { label:"Avg Off By", value:myStats.avgDiff ?? "—", color:C.gold },
-        ].map(stat => (
-          <div key={stat.label} style={{
-            background:C.surface, border:`1px solid ${C.border}`,
-            borderRadius:6, padding:"12px 14px", textAlign:"center",
-          }}>
-            <div style={{
-              fontFamily:"'League Spartan',sans-serif", fontSize:24, fontWeight:900,
-              color:stat.color, lineHeight:1,
-            }}>{stat.value}</div>
-            <div style={{
-              fontFamily:"'League Spartan',sans-serif", fontSize:9,
-              color:C.muted, letterSpacing:"0.12em", textTransform:"uppercase",
-              marginTop:6, fontWeight:700,
-            }}>{stat.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Awards grid */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))", gap:10, marginBottom:24 }}>
-        {awards.map(award => (
-          <div key={award.id} style={{
-            background: award.unlocked ? `linear-gradient(135deg, rgba(196,159,75,0.08), ${C.surface})` : C.surface,
-            border:`1px solid ${award.unlocked ? "rgba(196,159,75,0.3)" : C.border}`,
-            borderRadius:6, padding:"14px 16px",
-            opacity: award.unlocked ? 1 : 0.5,
-            position:"relative", overflow:"hidden",
-          }}>
-            {award.unlocked && (
+        {competitiveAwards.map(award => {
+          const hasLeader = !!award.leader;
+          const isMe = hasLeader && award.leader.name === userName;
+          return (
+            <div key={award.id} style={{
+              background: hasLeader ? `linear-gradient(135deg, rgba(196,159,75,0.08), ${C.surface})` : C.surface,
+              border:`1px solid ${isMe ? C.green : hasLeader ? "rgba(196,159,75,0.3)" : C.border}`,
+              borderRadius:6, padding:"14px 16px",
+              opacity: hasLeader ? 1 : 0.6,
+              position:"relative", overflow:"hidden",
+            }}>
+              {isMe && (
+                <div style={{
+                  position:"absolute", top:8, right:8,
+                  fontSize:8, color:C.green, fontFamily:"'League Spartan',sans-serif",
+                  fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase",
+                  background:C.tealDim, border:`1px solid ${C.tealBorder}`,
+                  borderRadius:3, padding:"2px 6px",
+                }}>You!</div>
+              )}
+              <div style={{ fontSize:24, marginBottom:6 }}>{award.icon}</div>
               <div style={{
-                position:"absolute", top:8, right:8,
-                fontSize:8, color:C.gold, fontFamily:"'League Spartan',sans-serif",
-                fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase",
-                background:"rgba(196,159,75,0.12)", border:"1px solid rgba(196,159,75,0.3)",
-                borderRadius:3, padding:"2px 6px",
-              }}>Unlocked</div>
-            )}
-            <div style={{ fontSize:28, marginBottom:6 }}>{award.icon}</div>
-            <div style={{
-              fontFamily:"'League Spartan',sans-serif", fontSize:13, fontWeight:900,
-              color:award.unlocked?C.gold:C.muted, textTransform:"uppercase",
-              letterSpacing:"0.04em", marginBottom:2,
-            }}>{award.title}</div>
-            <div style={{
-              fontFamily:"'Quicksand',sans-serif", fontSize:10, color:C.muted,
-              marginBottom:8, lineHeight:1.4,
-            }}>{award.subtitle}</div>
-            <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
-              <span style={{
-                fontFamily:"'League Spartan',sans-serif", fontSize:22, fontWeight:900,
-                color:award.unlocked?C.white:C.dim, lineHeight:1,
-              }}>{award.value}</span>
-              <span style={{
-                fontFamily:"'League Spartan',sans-serif", fontSize:9,
-                color:C.muted, letterSpacing:"0.1em", textTransform:"uppercase", fontWeight:700,
-              }}>{award.suffix}</span>
+                fontFamily:"'League Spartan',sans-serif", fontSize:12, fontWeight:900,
+                color:hasLeader ? C.gold : C.mutedLight, textTransform:"uppercase",
+                letterSpacing:"0.04em", marginBottom:3,
+              }}>{award.title}</div>
+              <div style={{
+                fontFamily:"'Quicksand',sans-serif", fontSize:10, color:C.mutedLight,
+                marginBottom:10, lineHeight:1.5,
+              }}>{award.subtitle}</div>
+              {hasLeader ? (
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                  <span style={{
+                    fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:900,
+                    color:isMe ? C.green : C.white, textTransform:"uppercase",
+                  }}>{award.leader.name}</span>
+                  <span style={{
+                    fontFamily:"'League Spartan',sans-serif", fontSize:13, fontWeight:900,
+                    color:C.gold,
+                  }}>{award.leader.value}<span style={{ fontSize:9, color:C.mutedLight, fontWeight:700, marginLeft:3, textTransform:"uppercase" }}>{award.suffix}</span></span>
+                </div>
+              ) : (
+                <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.mutedLight, fontStyle:"italic" }}>Not yet claimed</div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div style={{ fontSize:11, color:C.dim, lineHeight:1.6, fontFamily:"'Quicksand',sans-serif", textAlign:"center" }}>
-        Scoring: 3 pts correct result · 5 pts exact scoreline · Updates automatically as real results come in
+        Scoring: 3 pts correct result · 5 pts exact scoreline · +2 pts per correct group slot · +10 bonus for a perfect group order · Updates automatically as real results come in
       </div>
     </div>
   );
@@ -2455,9 +2555,8 @@ export default function App() {
             </div>
           )}
 
-          {tab==="actual"&&<ActualTab liveScores={liveScores} lastUpdated={lastUpdated} />}
+          {tab==="actual"&&<ActualTab liveScores={liveScores} scores={scores} lastUpdated={lastUpdated} />}
 
-          {tab==="results"&&<ResultsTab liveScores={liveScores} scores={scores} lastUpdated={lastUpdated} />}
           {tab==="bracket"&&<BracketTab scores={scores} liveScores={liveScores} champion={champion} knockoutPicks={knockoutPicks} onKnockoutPick={(id,pick)=>{
             setKnockoutPicks(p=>({...p,[id]:pick}));
             // Two-way sync: final match pick = champion
