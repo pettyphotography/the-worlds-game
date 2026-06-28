@@ -73,23 +73,26 @@ const GROUPS = {
   L:{ teams:["England","Croatia","Ghana","Panama"], matches:[["England","Croatia"],["Ghana","Panama"],["England","Ghana"],["Croatia","Panama"],["England","Panama"],["Croatia","Ghana"]] },
 };
 
+// ── R32 Confirmed Fixtures ────────────────────────────────────────────────────
+// Hardcoded from official FIFA R32 schedule. Two slots (Spain's opponent and
+// Switzerland's opponent) are still TBD pending tonight's Group J/L results.
 const R32_MATCHES = [
-  { id:73, label:"Match 73", home:{group:"A",pos:"runner"}, away:{group:"B",pos:"runner"} },
-  { id:74, label:"Match 74", home:{group:"E",pos:"winner"}, away:{pos:"third",from:"A/B/C/D/F"} },
-  { id:75, label:"Match 75", home:{group:"F",pos:"winner"}, away:{group:"C",pos:"runner"} },
-  { id:76, label:"Match 76", home:{group:"C",pos:"winner"}, away:{group:"F",pos:"runner"} },
-  { id:77, label:"Match 77", home:{group:"I",pos:"winner"}, away:{pos:"third",from:"C/D/F/G/H"} },
-  { id:78, label:"Match 78", home:{group:"E",pos:"runner"}, away:{group:"I",pos:"runner"} },
-  { id:79, label:"Match 79", home:{group:"A",pos:"winner"}, away:{pos:"third",from:"C/E/F/H/I"} },
-  { id:80, label:"Match 80", home:{group:"L",pos:"winner"}, away:{pos:"third",from:"E/H/I/J/K"} },
-  { id:81, label:"Match 81", home:{group:"D",pos:"winner"}, away:{pos:"third",from:"B/E/F/I/J"} },
-  { id:82, label:"Match 82", home:{group:"G",pos:"winner"}, away:{pos:"third",from:"A/E/H/I/J"} },
-  { id:83, label:"Match 83", home:{group:"K",pos:"runner"}, away:{group:"L",pos:"runner"} },
-  { id:84, label:"Match 84", home:{group:"H",pos:"winner"}, away:{group:"J",pos:"runner"} },
-  { id:85, label:"Match 85", home:{group:"B",pos:"winner"}, away:{pos:"third",from:"E/F/G/I/J"} },
-  { id:86, label:"Match 86", home:{group:"J",pos:"winner"}, away:{group:"H",pos:"runner"} },
-  { id:87, label:"Match 87", home:{group:"K",pos:"winner"}, away:{pos:"third",from:"D/E/I/J/L"} },
-  { id:88, label:"Match 88", home:{group:"G",pos:"runner"}, away:{group:"B",pos:"runner"} },
+  { id:73, home:"South Africa",        away:"Canada",                   date:"Jun 28", time:"3:00 PM ET" },
+  { id:74, home:"Brazil",              away:"Japan",                    date:"Jun 29", time:"1:00 PM ET" },
+  { id:75, home:"Germany",             away:"Paraguay",                 date:"Jun 29", time:"4:30 PM ET" },
+  { id:76, home:"Netherlands",         away:"Morocco",                  date:"Jun 29", time:"9:00 PM ET" },
+  { id:77, home:"Ivory Coast",         away:"Norway",                   date:"Jun 30", time:"1:00 PM ET" },
+  { id:78, home:"France",              away:"Sweden",                   date:"Jun 30", time:"5:00 PM ET" },
+  { id:79, home:"Mexico",              away:"Ecuador",                  date:"Jun 30", time:"9:00 PM ET" },
+  { id:80, home:"England",             away:"DR Congo",                 date:"Jul 1",  time:"12:00 PM ET" },
+  { id:81, home:"Belgium",             away:"Senegal",                  date:"Jul 1",  time:"4:00 PM ET" },
+  { id:82, home:"USA",                 away:"Bosnia & Herzegovina",     date:"Jul 1",  time:"8:00 PM ET" },
+  { id:83, home:"Spain",               away:"TBD",                      date:"Jul 2",  time:"3:00 PM ET" },
+  { id:84, home:"Portugal",            away:"Croatia",                  date:"Jul 2",  time:"7:00 PM ET" },
+  { id:85, home:"Switzerland",         away:"TBD",                      date:"Jul 2",  time:"11:00 PM ET" },
+  { id:86, home:"Australia",           away:"Egypt",                    date:"Jul 3",  time:"2:00 PM ET" },
+  { id:87, home:"Argentina",           away:"Cabo Verde",               date:"Jul 3",  time:"6:00 PM ET" },
+  { id:88, home:"Colombia",            away:"Ghana",                    date:"Jul 3",  time:"9:30 PM ET" },
 ];
 
 // ── Standings Engine ──────────────────────────────────────────────────────────
@@ -185,11 +188,12 @@ function calcGroupOrderScore(groupKey, userScores, liveScores) {
   const group = GROUPS[groupKey];
   if (!group) return null;
 
-  // Group must be fully finished (all 6 matches FINISHED) to score order
-  const allFinished = group.matches.every((_, idx) => liveScores[`${groupKey}-${idx}`]?.status === "FINISHED");
-  if (!allFinished) return null;
-
+  // Group must be fully played (all teams have played 3 games) to score order.
+  // We check actual standings rather than API status since some matches may
+  // return stale statuses even after the result is final.
   const actualStandings = calcStandings(groupKey, {}, liveScores);
+  const allPlayed = actualStandings.every(team => team.played === 3);
+  if (!allPlayed) return null;
   const predictedStandings = calcStandings(groupKey, userScores, {});
 
   const actualOrder = actualStandings.map(s => s.team);
@@ -1076,46 +1080,10 @@ function ThirdPlaceTracker({ scores, liveScores }) {
 
 // ── Bracket Tab — Full Knockout Through Final ─────────────────────────────────
 function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPick }) {
-  // Lock the bracket until the real Round of 32 matchups are confirmed.
-  // FIFA's third-place placement matrix (Annex C) has 495 possible combinations,
-  // so accurate R32 slots can't be known until the group stage finishes.
-  const BRACKET_UNLOCK_DATE = new Date("2026-06-28T00:00:00Z");
-  const isLocked = new Date() < BRACKET_UNLOCK_DATE;
-
-  if (isLocked) {
-    return (
-      <div style={{ maxWidth:600, margin:"60px auto", textAlign:"center", padding:"0 16px" }}>
-        <div style={{ fontSize:40, marginBottom:16, opacity:0.6 }}>🔒</div>
-        <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:22, fontWeight:900, color:C.white, marginBottom:10, letterSpacing:"0.02em" }}>
-          The Bracket Unlocks Soon
-        </div>
-        <div style={{ fontSize:14, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif", lineHeight:1.7, marginBottom:18 }}>
-          The Round of 32 matchups depend on which 8 third-place teams qualify — and FIFA doesn't lock that in until the group stage wraps on <span style={{ color:C.green, fontWeight:700 }}>June 27</span>.
-        </div>
-        <div style={{
-          background:"rgba(0,0,0,0.3)", border:`1px dashed ${C.border}`,
-          borderRadius:10, padding:"18px 20px", maxWidth:440, margin:"0 auto",
-        }}>
-          <div style={{ fontSize:12, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif", lineHeight:1.6 }}>
-            Once the real R32 fixtures are announced, this tab unlocks automatically with the official matchups — no progress is lost. Keep filling out your Group Stage predictions in the meantime.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const winners = getGroupWinners(scores, liveScores);
+  // Bracket is now unlocked — R32 fixtures confirmed
 
   // Determine team that won an R32 match based on user pick
   const getWinnerOfMatch = (matchId) => knockoutPicks[matchId] || null;
-
-  // R32 match → resolved home/away team names
-  const resolveR32Team = (slot) => {
-    if (slot.pos === "third") return { team:null, source:`3rd Grp ${slot.from}` };
-    const standing = slot.pos === "winner" ? winners[slot.group]?.first : winners[slot.group]?.second;
-    const hasData = standing?.played > 0;
-    return { team: hasData ? standing.team : null, source: `${slot.pos === "winner" ? "1st" : "2nd"} Grp ${slot.group}` };
-  };
 
   // Generate next round matchups from previous round winners
   // Standard knockout bracket: M1 vs M2, M3 vs M4, etc.
@@ -1245,16 +1213,17 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
   };
 
   // Build R32 cards
-  const r32Cards = R32_MATCHES.map(m => {
-    const homeData = resolveR32Team(m.home);
-    const awayData = resolveR32Team(m.away);
-    return { id:m.id, card: (
-      <MatchCard key={m.id} matchId={m.id} roundLabel="R32"
-        homeTeam={homeData.team} awayTeam={awayData.team}
-        homeSource={homeData.source} awaySource={awayData.source}
+  const r32Cards = R32_MATCHES.map(m => ({
+    id: m.id,
+    card: (
+      <MatchCard key={m.id} matchId={m.id} roundLabel={`R32 · ${m.date}`}
+        homeTeam={m.home === "TBD" ? null : m.home}
+        awayTeam={m.away === "TBD" ? null : m.away}
+        homeSource={m.home === "TBD" ? "TBD" : m.home}
+        awaySource={m.away === "TBD" ? "TBD" : m.away}
       />
-    )};
-  });
+    ),
+  }));
 
   // Build R16, QF, SF based on previous round picks
   const buildDownstreamCards = (matches, roundLabel) => matches.map(m => {
@@ -2039,7 +2008,7 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
   // Group Whisperer — count groups where user predicted the actual 1st-place team correctly
   let groupWinnersHit = 0;
   Object.keys(GROUPS).forEach(gKey => {
-    const allDone = GROUPS[gKey].matches.every((_, idx) => liveScores[`${gKey}-${idx}`]?.status === "FINISHED");
+    const allDone = actualStandings.every(team => team.played === 3);
     if (allDone) {
       const actualStandings = calcStandings(gKey, {}, liveScores);
       const userStandings = calcStandings(gKey, userScores, {});
