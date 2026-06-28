@@ -211,11 +211,15 @@ function calcGroupOrderScore(groupKey, userScores, liveScores) {
   const allPlayed = actualStandings.length === 4 && actualStandings.every(team => team.played === 3);
   if (!allPlayed) return null;
 
-  // Predicted standings — from user's entered scores only (empty live scores)
-  const predictedStandings = calcStandings(groupKey, userScores || {}, {});
+  // Predicted standings — blend user scores with live data for locked early matches.
+  // This matches exactly what the user sees in their group card: live results override
+  // user entries where the match is already done, user entries fill the rest.
+  // This means if a game was locked before the user could enter it, the real result
+  // counts toward their predicted order — which is correct and fair.
+  const predictedStandings = calcStandings(groupKey, userScores || {}, safeLive);
 
-  // Predicted standings must also have all 4 teams with data (user entered all 6 scores)
-  const predictedAllPlayed = predictedStandings.every(team => team.played === 3);
+  // Predicted standings must have all 4 teams with 3 games played
+  const predictedAllPlayed = predictedStandings.length === 4 && predictedStandings.every(team => team.played === 3);
   if (!predictedAllPlayed) return null;
 
   const actualOrder = actualStandings.map(s => s.team);
@@ -2604,7 +2608,7 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
           { label:"Predictions", value:stats.totalPredictions },
           { label:"Accuracy", value:`${stats.accuracy}%` },
           { label:"Exact Scores", value:stats.exact },
-          { label:"Avg Off By", value:stats.avgDiff },
+          { label:"Perfect Groups", value:stats.perfectGroupOrders },
         ].map(s=>(
           <div key={s.label} style={{ background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"14px 10px",textAlign:"center" }}>
             <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.green }}>{s.value}</div>
@@ -2613,19 +2617,74 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
         ))}
       </div>
 
+      {/* Group performance breakdown */}
+      {(() => {
+        const safeLive = liveScores || {};
+        const groupData = Object.keys(GROUPS).map(gKey => {
+          let correct = 0, scored = 0;
+          GROUPS[gKey].matches.forEach((_,idx) => {
+            const key = `${gKey}-${idx}`;
+            const r = scoreResult(theirScores[key], safeLive[key]);
+            if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
+          });
+          let orderResult = null;
+          try { orderResult = calcGroupOrderScore(gKey, theirScores, safeLive); } catch(e) {}
+          return { gKey, correct, scored, isPerfectOrder: orderResult?.isPerfect ?? false, correctSlots: orderResult?.correctSlots ?? 0 };
+        });
+        const anyScored = groupData.some(g => g.scored > 0);
+        if (!anyScored) return null;
+        return (
+          <>
+            <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.gold,fontWeight:700,marginBottom:12 }}>
+              Group Performance
+            </div>
+            <div className="balanced-grid" style={{ gap:8, marginBottom:24, "--cols": balancedColumns(12, 4) }}>
+              {groupData.map(({ gKey, correct, scored, isPerfectOrder, correctSlots }) => (
+                <div key={gKey} style={{
+                  background: isPerfectOrder ? `linear-gradient(135deg, rgba(196,159,75,0.1), ${C.surface})` : C.surface,
+                  border:`1px solid ${isPerfectOrder ? C.gold : C.border}`,
+                  borderRadius:8, padding:"12px 10px", textAlign:"center",
+                  position:"relative", opacity: scored === 0 ? 0.4 : 1,
+                }}>
+                  {isPerfectOrder && (
+                    <div style={{ position:"absolute", top:-7, left:"50%", transform:"translateX(-50%)", background:C.gold, color:"#000", fontSize:7, fontWeight:900, fontFamily:"'League Spartan',sans-serif", padding:"2px 6px", borderRadius:8, whiteSpace:"nowrap", textTransform:"uppercase" }}>★ Perfect</div>
+                  )}
+                  <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:900, color:isPerfectOrder ? C.gold : C.mutedLight, marginBottom:4 }}>Grp {gKey}</div>
+                  {scored > 0 ? (
+                    <>
+                      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:18, fontWeight:900, color:correct === scored ? C.green : C.white }}>{correct}/{scored}</div>
+                      <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.08em", textTransform:"uppercase", marginTop:2 }}>
+                        {isPerfectOrder ? "✓ order" : correctSlots > 0 ? `${correctSlots}/4 order` : "matches"}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize:9, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif" }}>—</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        );
+      })()}
+
       {/* Their group predictions */}
       <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.gold,fontWeight:700,marginBottom:12 }}>
         {entry.name}'s Group Predictions
       </div>
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",gap:12 }}>
         {Object.keys(GROUPS).map(g => {
-          const standings = calcStandings(g, theirScores, liveScores);
+          const safeLive = liveScores || {};
+          const standings = calcStandings(g, theirScores, safeLive);
+          let orderResult = null;
+          try { orderResult = calcGroupOrderScore(g, theirScores, safeLive); } catch(e) {}
+          const isPerfectOrder = orderResult?.isPerfect ?? false;
           return (
-            <div key={g} className="group-card fade-in" style={{ background:C.surface,border:`2px solid ${C.border}`,borderRadius:8,overflow:"hidden" }}>
+            <div key={g} className="group-card fade-in" style={{ background:C.surface, border:`2px solid ${isPerfectOrder ? C.gold : C.border}`, borderRadius:8, overflow:"hidden", boxShadow:isPerfectOrder ? "0 0 16px rgba(196,159,75,0.2)" : "none" }}>
               <div style={{ padding:"11px 14px",borderBottom:`1px solid ${C.border}`,background:`linear-gradient(135deg,${C.greenDark} 0%,#031A0E 100%)`,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
                 <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                  <div style={{ width:4,height:22,background:C.green,borderRadius:2,flexShrink:0 }} />
-                  <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:16,fontWeight:900,color:C.white,letterSpacing:"0.05em",textTransform:"uppercase" }}>Group {g}</span>
+                  <div style={{ width:4,height:22,background:isPerfectOrder ? C.gold : C.green,borderRadius:2,flexShrink:0 }} />
+                  <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:16,fontWeight:900,color:isPerfectOrder ? C.gold : C.white,letterSpacing:"0.05em",textTransform:"uppercase" }}>Group {g}</span>
+                  {isPerfectOrder && <span style={{ fontSize:9, background:"rgba(196,159,75,0.2)", border:`1px solid ${C.gold}`, borderRadius:4, padding:"2px 6px", fontFamily:"'League Spartan',sans-serif", fontWeight:900, color:C.gold, textTransform:"uppercase" }}>★ Perfect Order</span>}
                 </div>
                 <div style={{ display:"flex",gap:4 }}>
                   {standings.slice(0,2).map(row=><Flag key={row.team} team={row.team} size={14} />)}
