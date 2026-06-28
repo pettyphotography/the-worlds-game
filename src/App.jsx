@@ -1363,12 +1363,24 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
       else onKnockoutPick(matchId, team || pickTeam, pickHome, val);
     };
 
-    const inputStyle = {
-      width:36, height:32, background:"#050D08",
-      border:`1px solid ${C.border}`, borderRadius:4,
-      color:C.white, fontFamily:"'League Spartan',sans-serif",
-      fontSize:16, fontWeight:900, textAlign:"center",
-      outline:"none", appearance:"none", MozAppearance:"textfield",
+    // Stepper helper — no keyboard input so no scroll jump on mobile
+    const ScoreStepper = ({ team, value, onInc, onDec }) => (
+      <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4, flex:1 }}>
+        {team && <span style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", textTransform:"uppercase", letterSpacing:"0.06em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:70, textAlign:"center" }}>{team}</span>}
+        <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+          <button onClick={onDec} style={{ width:26, height:26, borderRadius:4, border:`1px solid ${C.border}`, background:"#050D08", color:C.white, fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:900, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>−</button>
+          <div style={{ width:32, height:32, borderRadius:4, border:`1px solid ${value !== "" ? C.green : C.border}`, background:"#050D08", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:value !== "" ? C.white : C.muted }}>
+            {value !== "" ? value : "—"}
+          </div>
+          <button onClick={onInc} style={{ width:26, height:26, borderRadius:4, border:`1px solid ${C.border}`, background:"#050D08", color:C.white, fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:900, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", lineHeight:1 }}>+</button>
+        </div>
+      </div>
+    );
+
+    const adjustScore = (side, delta) => {
+      const cur = side === "home" ? parseInt(pickHome) : parseInt(pickAway);
+      const next = Math.max(0, (isNaN(cur) ? 0 : cur) + delta);
+      handleScoreChange(side, String(next));
     };
 
     return (
@@ -1391,7 +1403,6 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
         </div>
 
         <div style={{ padding:"10px" }}>
-          {/* Team pills */}
           <TeamPill
             team={homeTeam} source={homeSource}
             isPick={pickTeam === homeTeam}
@@ -1410,38 +1421,19 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
             onClick={() => onKnockoutPick(matchId, awayTeam, pickHome, pickAway)}
           />
 
-          {/* Score prediction */}
           {canPick && (
             <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10 }}>
-              <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", textAlign:"center", marginBottom:6 }}>
+              <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", textAlign:"center", marginBottom:8 }}>
                 Predict final score
               </div>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
-                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1 }}>
-                  {homeTeam && <span style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", textTransform:"uppercase", letterSpacing:"0.06em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:70, textAlign:"center" }}>{homeTeam}</span>}
-                  <input
-                    type="number" min="0" max="20"
-                    value={pickHome}
-                    onChange={e => handleScoreChange("home", e.target.value)}
-                    style={inputStyle}
-                    placeholder="0"
-                  />
-                </div>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
+                <ScoreStepper team={homeTeam} value={pickHome} onInc={() => adjustScore("home", 1)} onDec={() => adjustScore("home", -1)} />
                 <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, color:C.mutedLight, fontWeight:900 }}>:</span>
-                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1 }}>
-                  {awayTeam && <span style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", textTransform:"uppercase", letterSpacing:"0.06em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:70, textAlign:"center" }}>{awayTeam}</span>}
-                  <input
-                    type="number" min="0" max="20"
-                    value={pickAway}
-                    onChange={e => handleScoreChange("away", e.target.value)}
-                    style={inputStyle}
-                    placeholder="0"
-                  />
-                </div>
+                <ScoreStepper team={awayTeam} value={pickAway} onInc={() => adjustScore("away", 1)} onDec={() => adjustScore("away", -1)} />
               </div>
               {!pickTeam && pickHome === "" && (
                 <div style={{ marginTop:6, fontSize:8, color:C.muted, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.08em", textTransform:"uppercase", textAlign:"center" }}>
-                  Tap a team or enter a score to pick
+                  Tap a team or use + to predict the score
                 </div>
               )}
             </div>
@@ -1485,6 +1477,39 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
   };
 
   // Build R32 cards
+  // Check if all matches in a set of IDs are complete per the API live scores
+  // A match is "done" if liveScores has it with status FINISHED or a real score
+  const isRoundComplete = (matchIds) => matchIds.every(id => {
+    const live = liveScores[id];
+    if (!live) return false;
+    if (live.status === "FINISHED") return true;
+    // Fallback: has an actual score and not in-progress
+    return live.home !== null && live.home !== undefined &&
+      live.status !== "SCHEDULED" && live.status !== "TIMED" &&
+      live.status !== "IN_PLAY" && live.status !== "PAUSED";
+  });
+
+  const r32Complete = isRoundComplete(R32_MATCHES.map(m => m.id));
+  const r16Complete = isRoundComplete(R16_MATCHES.map(m => m.id));
+  const qfComplete = isRoundComplete(QF_MATCHES.map(m => m.id));
+  const sfComplete = isRoundComplete(SF_MATCHES.map(m => m.id));
+
+  // Lock screen for a round that hasn't unlocked yet
+  const RoundLocked = ({ roundName, unlocksWhen }) => (
+    <div style={{
+      background:C.surface, border:`1px dashed ${C.border}`, borderRadius:8,
+      padding:"24px 20px", textAlign:"center", marginBottom:36,
+    }}>
+      <div style={{ fontSize:24, marginBottom:8 }}>🔒</div>
+      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:900, color:C.mutedLight, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:6 }}>
+        {roundName} Locked
+      </div>
+      <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:12, color:C.mutedLight, lineHeight:1.6 }}>
+        Unlocks once all {unlocksWhen} matches are complete.
+      </div>
+    </div>
+  );
+
   const r32Cards = R32_MATCHES.map(m => ({
     id: m.id,
     card: (
@@ -1554,28 +1579,28 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
         headerSize: 13,
       })}
 
-      {/* ── ROUND OF 16 ── (8 matches, slightly larger) */}
-      {renderRound({
+      {/* ── ROUND OF 16 ── unlocks once all R32 results are in */}
+      {r32Complete ? renderRound({
         title: "Round of 16",
         matches: r16Cards,
         roundLabel: "R16",
         accentColor: C.green,
         cardSize: 280,
         headerSize: 14,
-      })}
+      }) : <RoundLocked roundName="Round of 16" unlocksWhen="Round of 32" />}
 
-      {/* ── QUARTERFINALS ── (4 matches, gold accents) */}
-      {renderRound({
+      {/* ── QUARTERFINALS ── unlocks once all R16 results are in */}
+      {r16Complete ? renderRound({
         title: "Quarterfinals",
         matches: qfCards,
         roundLabel: "QF",
         accentColor: C.gold,
         cardSize: 320,
         headerSize: 15,
-      })}
+      }) : <RoundLocked roundName="Quarterfinals" unlocksWhen="Round of 16" />}
 
-      {/* ── SEMIFINALS ── (only 2, side-by-side hero treatment) */}
-      <div style={{ marginBottom:40 }}>
+      {/* ── SEMIFINALS ── unlocks once all QF results are in */}
+      {!qfComplete ? <RoundLocked roundName="Semifinals" unlocksWhen="Quarterfinal" /> : <div style={{ marginBottom:40 }}>
         <div style={{ marginBottom:18, display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ width:32, height:2, background:C.gold }} />
           <div style={{
@@ -1625,22 +1650,30 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                   onClick={() => onKnockoutPick(m.id, awayWinner, pickHome, pickAway)}
                 />
                 {canPick && (
-                  <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
-                    <input type="number" min="0" max="20" value={pickHome} placeholder="0" style={inputStyle}
-                      onChange={e => { const h=e.target.value; const a=pickAway; const hN=parseInt(h),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?homeWinner:awayWinner):pick; onKnockoutPick(m.id,t||pick,h,a); }} />
-                    <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, color:C.mutedLight, fontWeight:900 }}>:</span>
-                    <input type="number" min="0" max="20" value={pickAway} placeholder="0" style={inputStyle}
-                      onChange={e => { const a=e.target.value; const h=pickHome; const hN=parseInt(h),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?homeWinner:awayWinner):pick; onKnockoutPick(m.id,t||pick,h,a); }} />
+                  <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
+                    {[["home", pickHome, homeWinner], ["away", pickAway, awayWinner]].map(([side, val, team], idx) => (
+                      <React.Fragment key={side}>
+                        {idx === 1 && <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, color:C.mutedLight, fontWeight:900 }}>:</span>}
+                        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                          <span style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", textTransform:"uppercase", letterSpacing:"0.06em" }}>{team || "?"}</span>
+                          <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                            <button onClick={() => { const c=parseInt(val); const n=Math.max(0,(isNaN(c)?0:c)-1); const h=side==="home"?String(n):pickHome; const a=side==="away"?String(n):pickAway; const hN=parseInt(h),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?homeWinner:awayWinner):pick; onKnockoutPick(m.id,t||pick,h,a); }} style={{ width:26,height:26,borderRadius:4,border:`1px solid ${C.border}`,background:"#050D08",color:C.white,fontFamily:"'League Spartan',sans-serif",fontSize:14,fontWeight:900,cursor:"pointer" }}>−</button>
+                            <div style={{ width:32,height:32,borderRadius:4,border:`1px solid ${val!==""?C.green:C.border}`,background:"#050D08",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'League Spartan',sans-serif",fontSize:16,fontWeight:900,color:val!==""?C.white:C.muted }}>{val!==""?val:"—"}</div>
+                            <button onClick={() => { const c=parseInt(val); const n=(isNaN(c)?0:c)+1; const h=side==="home"?String(n):pickHome; const a=side==="away"?String(n):pickAway; const hN=parseInt(h),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?homeWinner:awayWinner):pick; onKnockoutPick(m.id,t||pick,h,a); }} style={{ width:26,height:26,borderRadius:4,border:`1px solid ${C.border}`,background:"#050D08",color:C.white,fontFamily:"'League Spartan',sans-serif",fontSize:14,fontWeight:900,cursor:"pointer" }}>+</button>
+                          </div>
+                        </div>
+                      </React.Fragment>
+                    ))}
                   </div>
                 )}
               </div>
             );
           })}
         </div>
-      </div>
+      </div>}
 
-      {/* ── THIRD PLACE PLAYOFF ── (small, bronze styling, almost an aside) */}
-      <div style={{ marginBottom:40 }}>
+      {/* ── THIRD PLACE PLAYOFF ── unlocks once SFs are done */}
+      {!sfComplete ? <RoundLocked roundName="Third Place Playoff" unlocksWhen="Semifinal" /> : <div style={{ marginBottom:40 }}>
         <div style={{ marginBottom:14, display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:20, height:1, background:"#CD7F32" }} />
           <div style={{
@@ -1673,10 +1706,10 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
             />
           </div>
         </div>
-      </div>
+      </div>}
 
-      {/* ── THE FINAL ── (full hero treatment, trophy, MetLife Stadium graphic) */}
-      <div style={{ marginBottom:24, position:"relative" }}>
+      {/* ── THE FINAL ── unlocks once SFs are done */}
+      {sfComplete && <div style={{ marginBottom:24, position:"relative" }}>
         {/* Section header */}
         <div style={{ marginBottom:24, display:"flex", alignItems:"center", gap:14, justifyContent:"center" }}>
           <div style={{ width:60, height:2, background:`linear-gradient(90deg, transparent, ${C.gold})` }} />
@@ -1805,11 +1838,19 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                       <div style={{ marginTop:14, borderTop:`1px solid ${C.border}`, paddingTop:14 }}>
                         <div style={{ fontSize:9, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", textAlign:"center", marginBottom:8 }}>Predict final score</div>
                         <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
-                          <input type="number" min="0" max="20" value={fph} placeholder="0" style={inputStyle}
-                            onChange={e => { const h=e.target.value; const hN=parseInt(h),aN=parseInt(fpa); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?finalHome:finalAway):finalWinner; onKnockoutPick(104,t||finalWinner,h,fpa); }} />
-                          <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, color:C.mutedLight, fontWeight:900 }}>:</span>
-                          <input type="number" min="0" max="20" value={fpa} placeholder="0" style={inputStyle}
-                            onChange={e => { const a=e.target.value; const hN=parseInt(fph),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?finalHome:finalAway):finalWinner; onKnockoutPick(104,t||finalWinner,fph,a); }} />
+                          {[["home", fph, finalHome], ["away", fpa, finalAway]].map(([side, val, team], idx) => (
+                            <React.Fragment key={side}>
+                              {idx === 1 && <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, color:C.mutedLight, fontWeight:900 }}>:</span>}
+                              <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                                <span style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", textTransform:"uppercase", letterSpacing:"0.06em" }}>{team || "?"}</span>
+                                <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                                  <button onClick={() => { const c=parseInt(val); const n=Math.max(0,(isNaN(c)?0:c)-1); const h=side==="home"?String(n):fph; const a=side==="away"?String(n):fpa; const hN=parseInt(h),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?finalHome:finalAway):finalWinner; onKnockoutPick(104,t||finalWinner,h,a); }} style={{ width:30,height:30,borderRadius:4,border:`1px solid ${C.border}`,background:"#050D08",color:C.white,fontFamily:"'League Spartan',sans-serif",fontSize:16,fontWeight:900,cursor:"pointer" }}>−</button>
+                                  <div style={{ width:40,height:40,borderRadius:4,border:`1px solid ${val!==""?C.gold:C.border}`,background:"#050D08",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'League Spartan',sans-serif",fontSize:20,fontWeight:900,color:val!==""?C.white:C.muted }}>{val!==""?val:"—"}</div>
+                                  <button onClick={() => { const c=parseInt(val); const n=(isNaN(c)?0:c)+1; const h=side==="home"?String(n):fph; const a=side==="away"?String(n):fpa; const hN=parseInt(h),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?finalHome:finalAway):finalWinner; onKnockoutPick(104,t||finalWinner,h,a); }} style={{ width:30,height:30,borderRadius:4,border:`1px solid ${C.border}`,background:"#050D08",color:C.white,fontFamily:"'League Spartan',sans-serif",fontSize:16,fontWeight:900,cursor:"pointer" }}>+</button>
+                                </div>
+                              </div>
+                            </React.Fragment>
+                          ))}
                         </div>
                       </div>
                     </>
@@ -1831,7 +1872,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
             )}
           </div>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
