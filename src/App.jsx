@@ -183,6 +183,26 @@ function scoreResult(pred, real, matchKey) {
 
 const SCORE_PTS = { exact: 5, correct: 3, wrong: 0 };
 
+// Score a knockout match prediction against the real result.
+// pred = { team, home, away } or string (old format)
+// real = { home, away, winner } where winner is the team that advanced
+function scoreKnockoutResult(pred, real) {
+  if (!pred || !real) return null;
+  const predTeam = typeof pred === "string" ? pred : pred.team;
+  const predHome = pred && typeof pred !== "string" ? parseInt(pred.home) : NaN;
+  const predAway = pred && typeof pred !== "string" ? parseInt(pred.away) : NaN;
+  if (!predTeam || !real.winner) return null;
+  const correctWinner = predTeam === real.winner;
+  if (!correctWinner) return "wrong";
+  // Check exact score
+  if (!isNaN(predHome) && !isNaN(predAway) &&
+      real.home !== undefined && real.home !== null &&
+      predHome === parseInt(real.home) && predAway === parseInt(real.away)) {
+    return "exact";
+  }
+  return "correct";
+}
+
 // ── Group Order Scoring ───────────────────────────────────────────────────────
 // Rewards predicting the full 1st-4th finishing order of a group.
 // +2 pts per team in its exact correct slot (max 8 for 4 teams)
@@ -1263,8 +1283,14 @@ function ThirdPlaceTracker({ scores, liveScores }) {
 function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPick }) {
   // Bracket is now unlocked — R32 fixtures confirmed
 
-  // Determine team that won an R32 match based on user pick
-  const getWinnerOfMatch = (matchId) => knockoutPicks[matchId] || null;
+  // Determine team that won an R32 match based on user pick — handles both old string
+  // format { 73: "Brazil" } and new object format { 73: { team: "Brazil", home:2, away:1 } }
+  const getPickTeam = (matchId) => {
+    const p = knockoutPicks[matchId];
+    if (!p) return null;
+    return typeof p === "string" ? p : p.team || null;
+  };
+  const getWinnerOfMatch = getPickTeam;
 
   // Generate next round matchups from previous round winners
   // Standard knockout bracket: M1 vs M2, M3 vs M4, etc.
@@ -1310,13 +1336,44 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
     );
   };
 
-  // Generic match card with two team pills + winner picker
+  // Generic match card with team picker + score prediction inputs
   const MatchCard = ({ matchId, label, roundLabel, homeTeam, awayTeam, homeSource, awaySource }) => {
-    const pick = knockoutPicks[matchId];
+    const pickData = knockoutPicks[matchId];
+    const pickTeam = pickData ? (typeof pickData === "string" ? pickData : pickData.team) : null;
+    const pickHome = pickData && typeof pickData !== "string" ? pickData.home : "";
+    const pickAway = pickData && typeof pickData !== "string" ? pickData.away : "";
     const canPick = !!(homeTeam && awayTeam);
+
+    const handleScoreInput = (side, val) => {
+      const currentTeam = pickTeam;
+      if (side === "home") onKnockoutPick(matchId, currentTeam || homeTeam, val, pickAway);
+      else onKnockoutPick(matchId, currentTeam || homeTeam, pickHome, val);
+    };
+
+    // Auto-pick winner from score if score is entered and no team picked yet
+    const handleScoreChange = (side, val) => {
+      const h = side === "home" ? val : pickHome;
+      const a = side === "away" ? val : pickAway;
+      const hNum = parseInt(h), aNum = parseInt(a);
+      let team = pickTeam;
+      if (!isNaN(hNum) && !isNaN(aNum) && hNum !== aNum) {
+        team = hNum > aNum ? homeTeam : awayTeam;
+      }
+      if (side === "home") onKnockoutPick(matchId, team || pickTeam, val, pickAway);
+      else onKnockoutPick(matchId, team || pickTeam, pickHome, val);
+    };
+
+    const inputStyle = {
+      width:36, height:32, background:"#050D08",
+      border:`1px solid ${C.border}`, borderRadius:4,
+      color:C.white, fontFamily:"'League Spartan',sans-serif",
+      fontSize:16, fontWeight:900, textAlign:"center",
+      outline:"none", appearance:"none", MozAppearance:"textfield",
+    };
+
     return (
       <div style={{
-        background:C.surface, border:`1px solid ${pick ? C.gold : C.border}`,
+        background:C.surface, border:`1px solid ${pickTeam ? C.gold : C.border}`,
         borderRadius:6, overflow:"hidden", transition:"border-color 0.2s",
       }}>
         <div style={{
@@ -1326,18 +1383,20 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
         }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <div style={{ width:3, height:14, background:C.green, borderRadius:1 }} />
-            <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:"0.12em" }}>
+            <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, fontWeight:700, color:C.mutedLight, textTransform:"uppercase", letterSpacing:"0.12em" }}>
               Match {matchId} · {roundLabel}
             </span>
           </div>
-          {pick && <span style={{ fontSize:8, color:C.gold, fontFamily:"'League Spartan',sans-serif", fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase" }}>Picked</span>}
+          {pickTeam && <span style={{ fontSize:8, color:C.gold, fontFamily:"'League Spartan',sans-serif", fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase" }}>Picked</span>}
         </div>
+
         <div style={{ padding:"10px" }}>
+          {/* Team pills */}
           <TeamPill
             team={homeTeam} source={homeSource}
-            isPick={pick === homeTeam}
+            isPick={pickTeam === homeTeam}
             isClickable={canPick}
-            onClick={() => onKnockoutPick(matchId, homeTeam)}
+            onClick={() => onKnockoutPick(matchId, homeTeam, pickHome, pickAway)}
           />
           <div style={{ display:"flex", alignItems:"center", gap:8, margin:"6px 0" }}>
             <div style={{ flex:1, height:1, background:C.border }} />
@@ -1346,13 +1405,45 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
           </div>
           <TeamPill
             team={awayTeam} source={awaySource}
-            isPick={pick === awayTeam}
+            isPick={pickTeam === awayTeam}
             isClickable={canPick}
-            onClick={() => onKnockoutPick(matchId, awayTeam)}
+            onClick={() => onKnockoutPick(matchId, awayTeam, pickHome, pickAway)}
           />
-          {canPick && !pick && (
-            <div style={{ marginTop:8, fontSize:9, color:C.muted, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", textAlign:"center" }}>
-              Tap a team to pick
+
+          {/* Score prediction */}
+          {canPick && (
+            <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10 }}>
+              <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", textAlign:"center", marginBottom:6 }}>
+                Predict final score
+              </div>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1 }}>
+                  {homeTeam && <span style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", textTransform:"uppercase", letterSpacing:"0.06em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:70, textAlign:"center" }}>{homeTeam}</span>}
+                  <input
+                    type="number" min="0" max="20"
+                    value={pickHome}
+                    onChange={e => handleScoreChange("home", e.target.value)}
+                    style={inputStyle}
+                    placeholder="0"
+                  />
+                </div>
+                <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, color:C.mutedLight, fontWeight:900 }}>:</span>
+                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, flex:1 }}>
+                  {awayTeam && <span style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", textTransform:"uppercase", letterSpacing:"0.06em", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:70, textAlign:"center" }}>{awayTeam}</span>}
+                  <input
+                    type="number" min="0" max="20"
+                    value={pickAway}
+                    onChange={e => handleScoreChange("away", e.target.value)}
+                    style={inputStyle}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              {!pickTeam && pickHome === "" && (
+                <div style={{ marginTop:6, fontSize:8, color:C.muted, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.08em", textTransform:"uppercase", textAlign:"center" }}>
+                  Tap a team or enter a score to pick
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1365,7 +1456,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
   // Round renderer with escalating visual drama
   const renderRound = (config) => {
     const { title, matches, roundLabel, accentColor, columns, cardSize, headerSize } = config;
-    const pickedCount = matches.filter(m => knockoutPicks[m.id]).length;
+    const pickedCount = matches.filter(m => getPickTeam(m.id)).length;
     return (
       <div style={{ marginBottom:36 }}>
         <div style={{ marginBottom:16, display:"flex", alignItems:"center", gap:12 }}>
@@ -1437,7 +1528,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
   const tpAway = sfLoser(102);
   const finalHome = getWinnerOfMatch(101);
   const finalAway = getWinnerOfMatch(102);
-  const finalWinner = knockoutPicks[104];
+  const finalWinner = getPickTeam(104);
   const finalHomeFlag = TEAM_FLAGS[finalHome];
   const finalAwayFlag = TEAM_FLAGS[finalAway];
   const finalWinnerFlag = TEAM_FLAGS[finalWinner];
@@ -1497,7 +1588,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
             fontSize:10, color:C.muted,
             fontFamily:"'League Spartan',sans-serif", fontWeight:700,
             letterSpacing:"0.1em", textTransform:"uppercase",
-          }}>{sfCards.filter(m => knockoutPicks[m.id]).length} / 2</div>
+          }}>{sfCards.filter(m => getPickTeam(m.id)).length} / 2</div>
         </div>
         <div style={{
           display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(320px, 1fr))", gap:16,
@@ -1505,8 +1596,12 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
           {SF_MATCHES.map(m => {
             const homeWinner = getWinnerOfMatch(m.src[0]);
             const awayWinner = getWinnerOfMatch(m.src[1]);
-            const pick = knockoutPicks[m.id];
+            const pickData = knockoutPicks[m.id];
+            const pick = pickData ? (typeof pickData === "string" ? pickData : pickData.team) : null;
+            const pickHome = pickData && typeof pickData !== "string" ? pickData.home : "";
+            const pickAway = pickData && typeof pickData !== "string" ? pickData.away : "";
             const canPick = !!(homeWinner && awayWinner);
+            const inputStyle = { width:36, height:32, background:"#050D08", border:`1px solid ${C.border}`, borderRadius:4, color:C.white, fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, textAlign:"center", outline:"none" };
             return (
               <div key={m.id} style={{
                 background:`linear-gradient(135deg, ${C.greenDeep} 0%, #000 100%)`,
@@ -1515,14 +1610,10 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                 boxShadow: pick ? `0 0 30px rgba(196,159,75,0.15)` : "none",
                 transition:"all 0.3s",
               }}>
-                <div style={{
-                  fontFamily:"'League Spartan',sans-serif", fontSize:10,
-                  color:C.gold, fontWeight:900, letterSpacing:"0.14em",
-                  textTransform:"uppercase", marginBottom:14, textAlign:"center",
-                }}>Semifinal · Match {m.id}</div>
+                <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, color:C.gold, fontWeight:900, letterSpacing:"0.14em", textTransform:"uppercase", marginBottom:14, textAlign:"center" }}>Semifinal · Match {m.id}</div>
                 <TeamPill team={homeWinner} source={`Winner M${m.src[0]}`}
                   isPick={pick === homeWinner} isClickable={canPick}
-                  onClick={() => onKnockoutPick(m.id, homeWinner)}
+                  onClick={() => onKnockoutPick(m.id, homeWinner, pickHome, pickAway)}
                 />
                 <div style={{ display:"flex", alignItems:"center", gap:8, margin:"10px 0" }}>
                   <div style={{ flex:1, height:1, background:C.border }} />
@@ -1531,8 +1622,17 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                 </div>
                 <TeamPill team={awayWinner} source={`Winner M${m.src[1]}`}
                   isPick={pick === awayWinner} isClickable={canPick}
-                  onClick={() => onKnockoutPick(m.id, awayWinner)}
+                  onClick={() => onKnockoutPick(m.id, awayWinner, pickHome, pickAway)}
                 />
+                {canPick && (
+                  <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                    <input type="number" min="0" max="20" value={pickHome} placeholder="0" style={inputStyle}
+                      onChange={e => { const h=e.target.value; const a=pickAway; const hN=parseInt(h),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?homeWinner:awayWinner):pick; onKnockoutPick(m.id,t||pick,h,a); }} />
+                    <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, color:C.mutedLight, fontWeight:900 }}>:</span>
+                    <input type="number" min="0" max="20" value={pickAway} placeholder="0" style={inputStyle}
+                      onChange={e => { const a=e.target.value; const h=pickHome; const hN=parseInt(h),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?homeWinner:awayWinner):pick; onKnockoutPick(m.id,t||pick,h,a); }} />
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1559,8 +1659,8 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
               letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:10, textAlign:"center",
             }}>Bronze medal match · Match 103</div>
             <TeamPill team={tpHome} source="Loser SF1"
-              isPick={knockoutPicks[103] === tpHome} isClickable={!!(tpHome && tpAway)}
-              onClick={() => onKnockoutPick(103, tpHome)}
+              isPick={getPickTeam(103) === tpHome} isClickable={!!(tpHome && tpAway)}
+              onClick={() => { const p=knockoutPicks[103]; const ph=p&&typeof p!=="string"?p.home:""; const pa=p&&typeof p!=="string"?p.away:""; onKnockoutPick(103, tpHome, ph, pa); }}
             />
             <div style={{ display:"flex", alignItems:"center", gap:8, margin:"7px 0" }}>
               <div style={{ flex:1, height:1, background:C.border }} />
@@ -1568,8 +1668,8 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
               <div style={{ flex:1, height:1, background:C.border }} />
             </div>
             <TeamPill team={tpAway} source="Loser SF2"
-              isPick={knockoutPicks[103] === tpAway} isClickable={!!(tpHome && tpAway)}
-              onClick={() => onKnockoutPick(103, tpAway)}
+              isPick={getPickTeam(103) === tpAway} isClickable={!!(tpHome && tpAway)}
+              onClick={() => { const p=knockoutPicks[103]; const ph=p&&typeof p!=="string"?p.home:""; const pa=p&&typeof p!=="string"?p.away:""; onKnockoutPick(103, tpAway, ph, pa); }}
             />
           </div>
         </div>
@@ -1670,41 +1770,51 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                   marginBottom:12, fontWeight:700,
                 }}>{finalWinner ? "Change Your Pick" : "Pick Your Champion"}</div>
 
-                <div onClick={() => onKnockoutPick(104, finalHome)} style={{
-                  display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
-                  background: finalWinner === finalHome ? "rgba(196,159,75,0.18)" : "rgba(90,148,123,0.06)",
-                  border:`1px solid ${finalWinner === finalHome ? C.gold : C.tealBorder}`,
-                  borderRadius:6, cursor:"pointer", marginBottom:8, transition:"all 0.15s",
-                }}>
-                  {finalHomeFlag && <img src={FLAG_URL(finalHomeFlag)} alt={finalHome} style={{ width:24, height:18, objectFit:"cover", borderRadius:2 }} />}
-                  <span style={{
-                    fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:700,
-                    color: finalWinner === finalHome ? C.gold : C.white, flex:1, textAlign:"left",
-                    textTransform:"uppercase", letterSpacing:"0.04em",
-                  }}>{finalHome}</span>
-                  {finalWinner === finalHome && <span style={{ color:C.gold, fontSize:14 }}>✓</span>}
-                </div>
-
-                <div style={{ display:"flex", alignItems:"center", gap:8, margin:"6px 0" }}>
-                  <div style={{ flex:1, height:1, background:C.border }} />
-                  <span style={{ fontSize:11, color:C.gold, fontFamily:"'League Spartan',sans-serif", fontWeight:900, letterSpacing:"0.2em" }}>FINAL</span>
-                  <div style={{ flex:1, height:1, background:C.border }} />
-                </div>
-
-                <div onClick={() => onKnockoutPick(104, finalAway)} style={{
-                  display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
-                  background: finalWinner === finalAway ? "rgba(196,159,75,0.18)" : "rgba(90,148,123,0.06)",
-                  border:`1px solid ${finalWinner === finalAway ? C.gold : C.tealBorder}`,
-                  borderRadius:6, cursor:"pointer", transition:"all 0.15s",
-                }}>
-                  {finalAwayFlag && <img src={FLAG_URL(finalAwayFlag)} alt={finalAway} style={{ width:24, height:18, objectFit:"cover", borderRadius:2 }} />}
-                  <span style={{
-                    fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:700,
-                    color: finalWinner === finalAway ? C.gold : C.white, flex:1, textAlign:"left",
-                    textTransform:"uppercase", letterSpacing:"0.04em",
-                  }}>{finalAway}</span>
-                  {finalWinner === finalAway && <span style={{ color:C.gold, fontSize:14 }}>✓</span>}
-                </div>
+                {(() => {
+                  const fp = knockoutPicks[104];
+                  const fph = fp && typeof fp !== "string" ? fp.home : "";
+                  const fpa = fp && typeof fp !== "string" ? fp.away : "";
+                  const inputStyle = { width:40, height:36, background:"#050D08", border:`1px solid ${C.border}`, borderRadius:4, color:C.white, fontFamily:"'League Spartan',sans-serif", fontSize:18, fontWeight:900, textAlign:"center", outline:"none" };
+                  return (
+                    <>
+                      <div onClick={() => onKnockoutPick(104, finalHome, fph, fpa)} style={{
+                        display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
+                        background: finalWinner === finalHome ? "rgba(196,159,75,0.18)" : "rgba(90,148,123,0.06)",
+                        border:`1px solid ${finalWinner === finalHome ? C.gold : C.tealBorder}`,
+                        borderRadius:6, cursor:"pointer", marginBottom:8, transition:"all 0.15s",
+                      }}>
+                        {finalHomeFlag && <img src={FLAG_URL(finalHomeFlag)} alt={finalHome} style={{ width:24, height:18, objectFit:"cover", borderRadius:2 }} />}
+                        <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:700, color: finalWinner === finalHome ? C.gold : C.white, flex:1, textAlign:"left", textTransform:"uppercase", letterSpacing:"0.04em" }}>{finalHome}</span>
+                        {finalWinner === finalHome && <span style={{ color:C.gold, fontSize:14 }}>✓</span>}
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, margin:"6px 0" }}>
+                        <div style={{ flex:1, height:1, background:C.border }} />
+                        <span style={{ fontSize:11, color:C.gold, fontFamily:"'League Spartan',sans-serif", fontWeight:900, letterSpacing:"0.2em" }}>FINAL</span>
+                        <div style={{ flex:1, height:1, background:C.border }} />
+                      </div>
+                      <div onClick={() => onKnockoutPick(104, finalAway, fph, fpa)} style={{
+                        display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
+                        background: finalWinner === finalAway ? "rgba(196,159,75,0.18)" : "rgba(90,148,123,0.06)",
+                        border:`1px solid ${finalWinner === finalAway ? C.gold : C.tealBorder}`,
+                        borderRadius:6, cursor:"pointer", transition:"all 0.15s",
+                      }}>
+                        {finalAwayFlag && <img src={FLAG_URL(finalAwayFlag)} alt={finalAway} style={{ width:24, height:18, objectFit:"cover", borderRadius:2 }} />}
+                        <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:700, color: finalWinner === finalAway ? C.gold : C.white, flex:1, textAlign:"left", textTransform:"uppercase", letterSpacing:"0.04em" }}>{finalAway}</span>
+                        {finalWinner === finalAway && <span style={{ color:C.gold, fontSize:14 }}>✓</span>}
+                      </div>
+                      <div style={{ marginTop:14, borderTop:`1px solid ${C.border}`, paddingTop:14 }}>
+                        <div style={{ fontSize:9, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", textAlign:"center", marginBottom:8 }}>Predict final score</div>
+                        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
+                          <input type="number" min="0" max="20" value={fph} placeholder="0" style={inputStyle}
+                            onChange={e => { const h=e.target.value; const hN=parseInt(h),aN=parseInt(fpa); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?finalHome:finalAway):finalWinner; onKnockoutPick(104,t||finalWinner,h,fpa); }} />
+                          <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, color:C.mutedLight, fontWeight:900 }}>:</span>
+                          <input type="number" min="0" max="20" value={fpa} placeholder="0" style={inputStyle}
+                            onChange={e => { const a=e.target.value; const hN=parseInt(fph),aN=parseInt(a); const t=!isNaN(hN)&&!isNaN(aN)&&hN!==aN?(hN>aN?finalHome:finalAway):finalWinner; onKnockoutPick(104,t||finalWinner,fph,a); }} />
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             ) : (
               <div style={{
@@ -1732,9 +1842,11 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
   const stats = calcUserStats(scores, liveScores || {}, champion, knockoutPicks || {});
 
   // Bracket journey — picks across all knockout rounds
-  const allPicks = Object.entries(knockoutPicks || {}).map(([id, team]) => ({
-    id: parseInt(id), team, flag: TEAM_FLAGS[team]
-  }));
+  const allPicks = Object.entries(knockoutPicks || {}).map(([id, val]) => {
+    const team = typeof val === "string" ? val : val?.team;
+    if (!team) return null;
+    return { id: parseInt(id), team, flag: TEAM_FLAGS[team] };
+  }).filter(Boolean);
 
   const r32Picks = allPicks.filter(p => p.id >= 73 && p.id <= 88);
   const r16Picks = allPicks.filter(p => p.id >= 89 && p.id <= 96);
@@ -2948,7 +3060,8 @@ export default function App() {
     </div>
   );
 
-  const qualifyingThirds = getThirdPlaceQualifiers(scores, liveScores);
+  // qualifyingThirds for Group Stage Picks uses user scores only — no live data bleed
+  const qualifyingThirds = getThirdPlaceQualifiers(scores, {});
 
   return (
     <>
@@ -3005,7 +3118,7 @@ export default function App() {
           {tab==="groups"&&(
             <div>
               <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.gold,fontWeight:700,marginBottom:16 }}>All 12 Groups — 72 Matches</div>
-              <ThirdPlaceTracker scores={scores} liveScores={liveScores} />
+              <ThirdPlaceTracker scores={scores} liveScores={{}} />
               <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",gap:12 }}>
                 {Object.keys(GROUPS).map(g=><GroupCard key={g} groupKey={g} scores={scores} onScore={handleScore} qualifyingThirds={qualifyingThirds} liveScores={liveScores} />)}
               </div>
@@ -3014,10 +3127,13 @@ export default function App() {
 
           {tab==="actual"&&<ActualTab liveScores={liveScores} scores={scores} lastUpdated={lastUpdated} />}
 
-          {tab==="bracket"&&<BracketTab scores={scores} liveScores={liveScores} champion={champion} knockoutPicks={knockoutPicks} onKnockoutPick={(id,pick)=>{
-            setKnockoutPicks(p=>({...p,[id]:pick}));
+          {tab==="bracket"&&<BracketTab scores={scores} liveScores={liveScores} champion={champion} knockoutPicks={knockoutPicks} onKnockoutPick={(id, team, home, away)=>{
+            const val = (home !== undefined && away !== undefined)
+              ? { team, home, away }
+              : { team, home: "", away: "" };
+            setKnockoutPicks(p=>({...p,[id]:val}));
             // Two-way sync: final match pick = champion
-            if (id === 104) setChampion(pick);
+            if (id === 104) setChampion(team);
           }} />}
           {tab==="champion"&&<ChampionTab
             champion={champion}
