@@ -1101,7 +1101,11 @@ function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) 
   const [open, setOpen] = useState(false);
   const group = GROUPS[groupKey];
   const safeLive = liveScores || {};
-  const standings = calcStandings(groupKey, scores, safeLive);
+
+  // Group Stage Picks shows the user's PREDICTED standings — based on their entries only.
+  // Live data must not bleed in here or it overwrites their picks with real results.
+  // We pass empty liveScores so calcStandings uses only user-entered scores.
+  const standings = calcStandings(groupKey, scores, {});
 
   // check if any match in this group is live
   const hasLive = group.matches.some((_,i) => {
