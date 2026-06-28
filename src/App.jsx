@@ -197,13 +197,26 @@ function calcGroupOrderScore(groupKey, userScores, liveScores) {
   if (!group) return null;
   const safeLive = liveScores || {};
 
-  // Group must be fully played (all teams have played 3 games) to score order.
-  // We check actual standings rather than API status since some matches may
-  // return stale statuses even after the result is final.
+  // Don't score a group that has any match currently in progress
+  const hasLive = group.matches.some((_, idx) => {
+    const s = safeLive[`${groupKey}-${idx}`]?.status;
+    return s === "IN_PLAY" || s === "PAUSED";
+  });
+  if (hasLive) return null;
+
+  // Actual standings — from live data only (empty user scores)
   const actualStandings = calcStandings(groupKey, {}, safeLive);
-  const allPlayed = actualStandings.every(team => team.played === 3);
+
+  // All 4 teams must have played 3 games for the group to be complete
+  const allPlayed = actualStandings.length === 4 && actualStandings.every(team => team.played === 3);
   if (!allPlayed) return null;
+
+  // Predicted standings — from user's entered scores only (empty live scores)
   const predictedStandings = calcStandings(groupKey, userScores || {}, {});
+
+  // Predicted standings must also have all 4 teams with data (user entered all 6 scores)
+  const predictedAllPlayed = predictedStandings.every(team => team.played === 3);
+  if (!predictedAllPlayed) return null;
 
   const actualOrder = actualStandings.map(s => s.team);
   const predictedOrder = predictedStandings.map(s => s.team);
@@ -2116,9 +2129,9 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
   // Group Whisperer — count groups where user predicted the actual 1st-place team correctly
   let groupWinnersHit = 0;
   Object.keys(GROUPS).forEach(gKey => {
+    const actualStandings = calcStandings(gKey, {}, liveScores);
     const allDone = actualStandings.every(team => team.played === 3);
     if (allDone) {
-      const actualStandings = calcStandings(gKey, {}, liveScores);
       const userStandings = calcStandings(gKey, userScores, {});
       if (actualStandings[0]?.team === userStandings[0]?.team) groupWinnersHit++;
     }
