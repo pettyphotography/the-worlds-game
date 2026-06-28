@@ -87,9 +87,9 @@ const R32_MATCHES = [
   { id:80, home:"England",             away:"DR Congo",                 date:"Jul 1",  time:"12:00 PM ET" },
   { id:81, home:"Belgium",             away:"Senegal",                  date:"Jul 1",  time:"4:00 PM ET" },
   { id:82, home:"USA",                 away:"Bosnia & Herzegovina",     date:"Jul 1",  time:"8:00 PM ET" },
-  { id:83, home:"Spain",               away:"TBD",                      date:"Jul 2",  time:"3:00 PM ET" },
+  { id:83, home:"Spain",               away:"Austria",                  date:"Jul 2",  time:"3:00 PM ET" },
   { id:84, home:"Portugal",            away:"Croatia",                  date:"Jul 2",  time:"7:00 PM ET" },
-  { id:85, home:"Switzerland",         away:"TBD",                      date:"Jul 2",  time:"11:00 PM ET" },
+  { id:85, home:"Switzerland",         away:"Algeria",                  date:"Jul 2",  time:"11:00 PM ET" },
   { id:86, home:"Australia",           away:"Egypt",                    date:"Jul 3",  time:"2:00 PM ET" },
   { id:87, home:"Argentina",           away:"Cabo Verde",               date:"Jul 3",  time:"6:00 PM ET" },
   { id:88, home:"Colombia",            away:"Ghana",                    date:"Jul 3",  time:"9:30 PM ET" },
@@ -164,16 +164,16 @@ function getGroupWinners(scores, liveScores={}) {
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
-function scoreResult(pred, real) {
-  // Use actual score data to determine result — don't require status === "FINISHED"
-  // since the API sometimes returns stale statuses on completed matches.
+function scoreResult(pred, real, matchKey) {
+  // Use hardcoded result if available — never rely solely on API status
+  const ground = matchKey ? (HARDCODED_RESULTS[matchKey] || real) : real;
   if (!pred || pred.home === "" || pred.away === "") return null;
-  if (!real || real.home === null || real.home === undefined || real.home === "") return null;
+  if (!ground || ground.home === null || ground.home === undefined || ground.home === "") return null;
   const ph = parseInt(pred.home), pa = parseInt(pred.away);
-  const rh = parseInt(real.home), ra = parseInt(real.away);
+  const rh = parseInt(ground.home), ra = parseInt(ground.away);
   if (isNaN(ph) || isNaN(pa) || isNaN(rh) || isNaN(ra)) return null;
-  // Only score if the match is actually complete (has a result + not just scheduled)
-  if (real.status === "SCHEDULED" || real.status === "TIMED") return null;
+  // Only score if the match is actually complete
+  if (ground.status === "SCHEDULED" || ground.status === "TIMED") return null;
   if (ph === rh && pa === ra) return "exact";
   const predRes = ph > pa ? "H" : ph < pa ? "A" : "D";
   const realRes = rh > ra ? "H" : rh < ra ? "A" : "D";
@@ -190,36 +190,157 @@ const SCORE_PTS = { exact: 5, correct: 3, wrong: 0 };
 const GROUP_ORDER_PTS_PER_SLOT = 2;
 const GROUP_ORDER_PERFECT_BONUS = 10;
 
+// ── Hardcoded Group Stage Results ─────────────────────────────────────────────
+// All 72 group stage matches are complete. These results are fixed historical
+// facts and never change. Hardcoding them means scoring never depends on the
+// API returning correct status fields — fully airtight.
+// Match indices follow the order defined in GROUPS above.
+const HARDCODED_RESULTS = {
+  // GROUP A — matches: [Mex/SA, SKor/Cze, Mex/SKor, SA/Cze, Mex/Cze, SA/SKor]
+  "A-0": { home:2, away:0, status:"FINISHED" }, // Mexico 2-0 South Africa
+  "A-1": { home:2, away:1, status:"FINISHED" }, // South Korea 2-1 Czechia
+  "A-2": { home:1, away:0, status:"FINISHED" }, // Mexico 1-0 South Korea
+  "A-3": { home:1, away:1, status:"FINISHED" }, // South Africa 1-1 Czechia
+  "A-4": { home:3, away:0, status:"FINISHED" }, // Mexico 3-0 Czechia
+  "A-5": { home:1, away:0, status:"FINISHED" }, // South Africa 1-0 South Korea
+
+  // GROUP B — matches: [Can/Bos, Qat/Swi, Can/Qat, Bos/Swi, Can/Swi, Bos/Qat]
+  "B-0": { home:1, away:1, status:"FINISHED" }, // Canada 1-1 Bosnia & Herzegovina
+  "B-1": { home:1, away:1, status:"FINISHED" }, // Qatar 1-1 Switzerland
+  "B-2": { home:6, away:0, status:"FINISHED" }, // Canada 6-0 Qatar
+  "B-3": { home:1, away:4, status:"FINISHED" }, // Bosnia 1-4 Switzerland
+  "B-4": { home:1, away:2, status:"FINISHED" }, // Canada 1-2 Switzerland
+  "B-5": { home:3, away:1, status:"FINISHED" }, // Bosnia 3-1 Qatar
+
+  // GROUP C — matches: [Bra/Mor, Hai/Sco, Bra/Hai, Mor/Sco, Bra/Sco, Mor/Hai]
+  "C-0": { home:1, away:1, status:"FINISHED" }, // Brazil 1-1 Morocco
+  "C-1": { home:0, away:1, status:"FINISHED" }, // Haiti 0-1 Scotland
+  "C-2": { home:3, away:0, status:"FINISHED" }, // Brazil 3-0 Haiti
+  "C-3": { home:1, away:0, status:"FINISHED" }, // Morocco 1-0 Scotland
+  "C-4": { home:3, away:0, status:"FINISHED" }, // Brazil 3-0 Scotland
+  "C-5": { home:4, away:2, status:"FINISHED" }, // Morocco 4-2 Haiti
+
+  // GROUP D — matches: [USA/Par, Aus/Tur, USA/Aus, Par/Tur, USA/Tur, Par/Aus]
+  "D-0": { home:4, away:1, status:"FINISHED" }, // United States 4-1 Paraguay
+  "D-1": { home:2, away:0, status:"FINISHED" }, // Australia 2-0 Turkiye
+  "D-2": { home:2, away:0, status:"FINISHED" }, // United States 2-0 Australia
+  "D-3": { home:0, away:1, status:"FINISHED" }, // Turkiye 0-1 Paraguay
+  "D-4": { home:2, away:3, status:"FINISHED" }, // United States 2-3 Turkiye
+  "D-5": { home:0, away:0, status:"FINISHED" }, // Paraguay 0-0 Australia
+
+  // GROUP E — matches: [Ger/Cur, IvC/Ecu, Ger/IvC, Cur/Ecu, Ger/Ecu, Cur/IvC]
+  "E-0": { home:7, away:1, status:"FINISHED" }, // Germany 7-1 Curacao
+  "E-1": { home:1, away:0, status:"FINISHED" }, // Cote d'Ivoire 1-0 Ecuador
+  "E-2": { home:2, away:1, status:"FINISHED" }, // Germany 2-1 Cote d'Ivoire
+  "E-3": { home:0, away:0, status:"FINISHED" }, // Curacao 0-0 Ecuador
+  "E-4": { home:1, away:2, status:"FINISHED" }, // Germany 1-2 Ecuador
+  "E-5": { home:0, away:2, status:"FINISHED" }, // Curacao 0-2 Cote d'Ivoire
+
+  // GROUP F — matches: [Ned/Jap, Swe/Tun, Ned/Swe, Jap/Tun, Ned/Tun, Jap/Swe]
+  "F-0": { home:2, away:2, status:"FINISHED" }, // Netherlands 2-2 Japan
+  "F-1": { home:5, away:1, status:"FINISHED" }, // Sweden 5-1 Tunisia
+  "F-2": { home:5, away:1, status:"FINISHED" }, // Netherlands 5-1 Sweden
+  "F-3": { home:4, away:0, status:"FINISHED" }, // Japan 4-0 Tunisia
+  "F-4": { home:3, away:1, status:"FINISHED" }, // Netherlands 3-1 Tunisia
+  "F-5": { home:1, away:1, status:"FINISHED" }, // Japan 1-1 Sweden
+
+  // GROUP G — matches: [Bel/Egy, Ira/NZ, Bel/Ira, Egy/NZ, Bel/NZ, Egy/Ira]
+  "G-0": { home:1, away:1, status:"FINISHED" }, // Belgium 1-1 Egypt
+  "G-1": { home:2, away:2, status:"FINISHED" }, // Iran 2-2 New Zealand
+  "G-2": { home:0, away:0, status:"FINISHED" }, // Belgium 0-0 Iran
+  "G-3": { home:3, away:1, status:"FINISHED" }, // Egypt 3-1 New Zealand
+  "G-4": { home:5, away:1, status:"FINISHED" }, // Belgium 5-1 New Zealand
+  "G-5": { home:1, away:1, status:"FINISHED" }, // Egypt 1-1 Iran
+
+  // GROUP H — matches: [Spa/CV, SA/Uru, Spa/SA, CV/Uru, Spa/Uru, CV/SA]
+  "H-0": { home:0, away:0, status:"FINISHED" }, // Spain 0-0 Cabo Verde
+  "H-1": { home:1, away:1, status:"FINISHED" }, // Saudi Arabia 1-1 Uruguay
+  "H-2": { home:4, away:0, status:"FINISHED" }, // Spain 4-0 Saudi Arabia
+  "H-3": { home:2, away:2, status:"FINISHED" }, // Cabo Verde 2-2 Uruguay
+  "H-4": { home:1, away:0, status:"FINISHED" }, // Spain 1-0 Uruguay
+  "H-5": { home:0, away:0, status:"FINISHED" }, // Cabo Verde 0-0 Saudi Arabia
+
+  // GROUP I — matches: [Fra/Sen, Ira/Nor, Fra/Ira, Sen/Nor, Fra/Nor, Sen/Ira]
+  "I-0": { home:3, away:1, status:"FINISHED" }, // France 3-1 Senegal
+  "I-1": { home:1, away:4, status:"FINISHED" }, // Iraq 1-4 Norway
+  "I-2": { home:3, away:0, status:"FINISHED" }, // France 3-0 Iraq
+  "I-3": { home:2, away:3, status:"FINISHED" }, // Senegal 2-3 Norway
+  "I-4": { home:4, away:1, status:"FINISHED" }, // France 4-1 Norway
+  "I-5": { home:5, away:0, status:"FINISHED" }, // Senegal 5-0 Iraq
+
+  // GROUP J — matches: [Arg/Alg, Aut/Jor, Arg/Aut, Alg/Jor, Arg/Jor, Alg/Aut]
+  "J-0": { home:3, away:0, status:"FINISHED" }, // Argentina 3-0 Algeria
+  "J-1": { home:3, away:1, status:"FINISHED" }, // Austria 3-1 Jordan
+  "J-2": { home:2, away:0, status:"FINISHED" }, // Argentina 2-0 Austria
+  "J-3": { home:2, away:1, status:"FINISHED" }, // Algeria 2-1 Jordan
+  "J-4": { home:3, away:1, status:"FINISHED" }, // Argentina 3-1 Jordan
+  "J-5": { home:3, away:3, status:"FINISHED" }, // Algeria 3-3 Austria
+
+  // GROUP K — matches: [Por/Con, Uzb/Col, Por/Uzb, Con/Col, Col/Por, Con/Uzb]
+  "K-0": { home:1, away:1, status:"FINISHED" }, // Portugal 1-1 Congo DR
+  "K-1": { home:1, away:3, status:"FINISHED" }, // Uzbekistan 1-3 Colombia
+  "K-2": { home:5, away:0, status:"FINISHED" }, // Portugal 5-0 Uzbekistan
+  "K-3": { home:0, away:1, status:"FINISHED" }, // Congo DR 0-1 Colombia
+  "K-4": { home:0, away:0, status:"FINISHED" }, // Colombia 0-0 Portugal
+  "K-5": { home:3, away:1, status:"FINISHED" }, // Congo DR 3-1 Uzbekistan
+
+  // GROUP L — matches: [Eng/Cro, Gha/Pan, Eng/Gha, Cro/Pan, Eng/Pan, Cro/Gha]
+  "L-0": { home:4, away:2, status:"FINISHED" }, // England 4-2 Croatia
+  "L-1": { home:1, away:0, status:"FINISHED" }, // Ghana 1-0 Panama
+  "L-2": { home:0, away:0, status:"FINISHED" }, // England 0-0 Ghana
+  "L-3": { home:1, away:0, status:"FINISHED" }, // Croatia 1-0 Panama
+  "L-4": { home:2, away:0, status:"FINISHED" }, // England 2-0 Panama
+  "L-5": { home:2, away:1, status:"FINISHED" }, // Croatia 2-1 Ghana
+};
+
 // Returns { points, correctSlots, isPerfect, actualOrder, predictedOrder } for one group,
 // or null if the group isn't fully finished yet (can't score an incomplete group).
 function calcGroupOrderScore(groupKey, userScores, liveScores) {
   const group = GROUPS[groupKey];
   if (!group) return null;
-  const safeLive = liveScores || {};
 
-  // Don't score a group that has any match currently in progress
+  // Merge live API data with hardcoded results — hardcoded always wins
+  const mergedLive = { ...(liveScores || {}), ...HARDCODED_RESULTS };
+
+  // Don't score a group that has any match currently in progress per API
   const hasLive = group.matches.some((_, idx) => {
-    const s = safeLive[`${groupKey}-${idx}`]?.status;
+    const s = mergedLive[`${groupKey}-${idx}`]?.status;
     return s === "IN_PLAY" || s === "PAUSED";
   });
   if (hasLive) return null;
 
-  // Actual standings — from live data only (empty user scores)
-  const actualStandings = calcStandings(groupKey, {}, safeLive);
+  // Actual standings — from hardcoded results (ground truth)
+  const actualStandings = calcStandings(groupKey, {}, mergedLive);
 
   // All 4 teams must have played 3 games for the group to be complete
   const allPlayed = actualStandings.length === 4 && actualStandings.every(team => team.played === 3);
   if (!allPlayed) return null;
 
-  // Predicted standings — blend user scores with live data for locked early matches.
-  // This matches exactly what the user sees in their group card: live results override
-  // user entries where the match is already done, user entries fill the rest.
-  // This means if a game was locked before the user could enter it, the real result
-  // counts toward their predicted order — which is correct and fair.
-  const predictedStandings = calcStandings(groupKey, userScores || {}, safeLive);
+  // Predicted standings — use user's entered scores where they exist.
+  // For Day 1 matches locked before the app launched (A-0, A-1), give the real
+  // result as a freebie since users had no opportunity to enter them.
+  // Every other blank = no prediction = group can't score for order.
+  const DAY1_FREEBIES = { "A-0": true, "A-1": true };
+  const blendedForPrediction = {};
+  group.matches.forEach((_, idx) => {
+    const key = `${groupKey}-${idx}`;
+    const userEntry = userScores?.[key];
+    const hasUserEntry = userEntry &&
+      userEntry.home !== "" && userEntry.home !== null && userEntry.home !== undefined &&
+      userEntry.away !== "" && userEntry.away !== null && userEntry.away !== undefined;
+    if (hasUserEntry) {
+      blendedForPrediction[key] = userEntry; // user's actual prediction — never override
+    } else if (DAY1_FREEBIES[key]) {
+      blendedForPrediction[key] = HARDCODED_RESULTS[key]; // hardcoded freebie
+    }
+    // Any other blank = no prediction, group won't score
+  });
 
-  // Predicted standings must have all 4 teams with 3 games played
-  const predictedAllPlayed = predictedStandings.length === 4 && predictedStandings.every(team => team.played === 3);
+  const predictedStandings = calcStandings(groupKey, blendedForPrediction, {});
+
+  // All 4 teams must have played 3 games in the predicted standings
+  const predictedAllPlayed = predictedStandings.length === 4 &&
+    predictedStandings.every(team => team.played === 3);
   if (!predictedAllPlayed) return null;
 
   const actualOrder = actualStandings.map(s => s.team);
@@ -992,7 +1113,7 @@ function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) 
   let correct = 0, scored = 0;
   group.matches.forEach((_,idx) => {
     const key = `${groupKey}-${idx}`;
-    const r = scoreResult(scores[key], safeLive[key]);
+    const r = scoreResult(scores[key], safeLive[key], key);
     if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
   });
   const hasAnyScored = scored > 0;
@@ -1787,7 +1908,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
           let correct = 0, scored = 0;
           GROUPS[gKey].matches.forEach((_,idx) => {
             const key = `${gKey}-${idx}`;
-            const r = scoreResult(scores[key], safeLive[key]);
+            const r = scoreResult(scores[key], safeLive[key], key);
             if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
           });
           // Perfect = correct 1st/2nd/3rd/4th finishing order — not match scores
@@ -2068,7 +2189,7 @@ function calcUserStats(userScores, liveScores, champion, knockoutPicks) {
         if (!isNaN(ph) && !isNaN(pa)) totalGoalsPredicted += ph + pa;
       }
 
-      const r = scoreResult(user, live);
+      const r = scoreResult(user, live, key);
       if (!r) return;
 
       totalPts += SCORE_PTS[r];
@@ -2222,7 +2343,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
     Object.keys(GROUPS).forEach(gKey => {
       GROUPS[gKey].matches.forEach(([,],idx) => {
         const key = `${gKey}-${idx}`;
-        const r = scoreResult(userScores?.[key], liveScores[key]);
+        const r = scoreResult(userScores?.[key], liveScores?.[key], key);
         if(r) pts += SCORE_PTS[r];
       });
     });
@@ -2624,7 +2745,7 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
           let correct = 0, scored = 0;
           GROUPS[gKey].matches.forEach((_,idx) => {
             const key = `${gKey}-${idx}`;
-            const r = scoreResult(theirScores[key], safeLive[key]);
+            const r = scoreResult(theirScores[key], safeLive[key], key);
             if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
           });
           let orderResult = null;
