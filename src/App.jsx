@@ -195,14 +195,15 @@ const GROUP_ORDER_PERFECT_BONUS = 10;
 function calcGroupOrderScore(groupKey, userScores, liveScores) {
   const group = GROUPS[groupKey];
   if (!group) return null;
+  const safeLive = liveScores || {};
 
   // Group must be fully played (all teams have played 3 games) to score order.
   // We check actual standings rather than API status since some matches may
   // return stale statuses even after the result is final.
-  const actualStandings = calcStandings(groupKey, {}, liveScores);
+  const actualStandings = calcStandings(groupKey, {}, safeLive);
   const allPlayed = actualStandings.every(team => team.played === 3);
   if (!allPlayed) return null;
-  const predictedStandings = calcStandings(groupKey, userScores, {});
+  const predictedStandings = calcStandings(groupKey, userScores || {}, {});
 
   const actualOrder = actualStandings.map(s => s.team);
   const predictedOrder = predictedStandings.map(s => s.team);
@@ -961,54 +962,50 @@ function ActualTab({ liveScores, scores, lastUpdated }) {
 function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) {
   const [open, setOpen] = useState(false);
   const group = GROUPS[groupKey];
-  const standings = calcStandings(groupKey, scores, liveScores);
+  const safeLive = liveScores || {};
+  const standings = calcStandings(groupKey, scores, safeLive);
 
   // check if any match in this group is live
   const hasLive = group.matches.some((_,i) => {
     const k = `${groupKey}-${i}`;
-    return liveScores[k]?.status === "IN_PLAY" || liveScores[k]?.status === "PAUSED";
+    return safeLive[k]?.status === "IN_PLAY" || safeLive[k]?.status === "PAUSED";
   });
 
-  // Per-group scoring: how many did the user get right, and is it perfect?
+  // Per-group match score tally (for display only — not what "perfect" means)
   let correct = 0, scored = 0;
   group.matches.forEach((_,idx) => {
     const key = `${groupKey}-${idx}`;
-    const r = scoreResult(scores[key], liveScores[key]);
+    const r = scoreResult(scores[key], safeLive[key]);
     if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
   });
-  const isPerfectGroup = scored === 6 && correct === 6;
   const hasAnyScored = scored > 0;
 
-  // Perfect GROUP ORDER — all 4 teams in the right finishing slot
-  const groupOrderResult = calcGroupOrderScore(groupKey, scores, liveScores);
+  // Perfect GROUP ORDER — predicted the exact 1st/2nd/3rd/4th finishing order correctly.
+  // This is what "perfect group" means — nothing to do with individual match scores.
+  const groupOrderResult = calcGroupOrderScore(groupKey, scores, safeLive);
   const isPerfectOrder = groupOrderResult?.isPerfect ?? false;
 
-  const borderColor = isPerfectGroup ? C.gold : hasLive ? C.green : C.border;
-  const headerGlow = isPerfectGroup ? "0 0 20px rgba(196,159,75,0.25)" : "none";
+  const borderColor = isPerfectOrder ? C.gold : hasLive ? C.green : C.border;
+  const headerGlow = isPerfectOrder ? "0 0 20px rgba(196,159,75,0.25)" : "none";
 
   return (
     <div className="group-card fade-in" style={{ background:C.surface, border:`2px solid ${borderColor}`, borderRadius:8, overflow:"hidden", boxShadow:headerGlow }}>
       <div style={{ padding:"11px 14px", borderBottom:`1px solid ${C.border}`, background:`linear-gradient(135deg,${C.greenDark} 0%,#031A0E 100%)`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <div style={{ width:4, height:22, background:isPerfectGroup ? C.gold : C.green, borderRadius:2, flexShrink:0 }} />
-          <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:isPerfectGroup ? C.gold : C.white, letterSpacing:"0.05em", textTransform:"uppercase" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>
+          <div style={{ width:4, height:22, background:isPerfectOrder ? C.gold : C.green, borderRadius:2, flexShrink:0 }} />
+          <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:isPerfectOrder ? C.gold : C.white, letterSpacing:"0.05em", textTransform:"uppercase" }}>
             Group {groupKey}
           </span>
           {hasLive && <span className="live-dot" style={{ fontSize:8, color:C.green }}>● LIVE</span>}
-          {isPerfectGroup && (
-            <span style={{ fontSize:10, background:"rgba(196,159,75,0.2)", border:`1px solid ${C.gold}`, borderRadius:4, padding:"2px 7px", fontFamily:"'League Spartan',sans-serif", fontWeight:900, color:C.gold, letterSpacing:"0.08em", textTransform:"uppercase" }}>
-              ★ Perfect
-            </span>
-          )}
-          {!isPerfectGroup && isPerfectOrder && (
-            <span style={{ fontSize:10, background:"rgba(90,148,123,0.15)", border:`1px solid ${C.green}`, borderRadius:4, padding:"2px 7px", fontFamily:"'League Spartan',sans-serif", fontWeight:900, color:C.green, letterSpacing:"0.08em", textTransform:"uppercase" }}>
-              ✓ Order
+          {isPerfectOrder && (
+            <span style={{ fontSize:9, background:"rgba(196,159,75,0.2)", border:`1px solid ${C.gold}`, borderRadius:4, padding:"2px 7px", fontFamily:"'League Spartan',sans-serif", fontWeight:900, color:C.gold, letterSpacing:"0.08em", textTransform:"uppercase", flexShrink:0 }}>
+              ★ Perfect Order
             </span>
           )}
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
           {hasAnyScored && (
-            <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, fontWeight:700, color:isPerfectGroup ? C.gold : C.mutedLight, letterSpacing:"0.06em" }}>
+            <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, fontWeight:700, color:C.mutedLight, letterSpacing:"0.06em" }}>
               {correct}/{scored}
             </span>
           )}
@@ -1768,17 +1765,19 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
 
       {/* ── GROUP PERFORMANCE BREAKDOWN ── */}
       {(() => {
+        const safeLive = liveScores || {};
         const groupData = Object.keys(GROUPS).map(gKey => {
           let correct = 0, scored = 0;
           GROUPS[gKey].matches.forEach((_,idx) => {
             const key = `${gKey}-${idx}`;
-            const r = scoreResult(scores[key], liveScores[key]);
+            const r = scoreResult(scores[key], safeLive[key]);
             if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
           });
-          const orderResult = calcGroupOrderScore(gKey, scores, liveScores || {});
-          const isPerfect = scored === 6 && correct === 6;
+          // Perfect = correct 1st/2nd/3rd/4th finishing order — not match scores
+          let orderResult = null;
+          try { orderResult = calcGroupOrderScore(gKey, scores, safeLive); } catch(e) {}
           const isPerfectOrder = orderResult?.isPerfect ?? false;
-          return { gKey, correct, scored, isPerfect, isPerfectOrder, orderPts: orderResult?.points ?? 0 };
+          return { gKey, correct, scored, isPerfectOrder, orderPts: orderResult?.points ?? 0, correctSlots: orderResult?.correctSlots ?? 0 };
         });
         const anyScored = groupData.some(g => g.scored > 0);
         if (!anyScored) return null;
@@ -1786,38 +1785,40 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
           <>
             <SectionHeader title="Group Performance" />
             <div className="balanced-grid" style={{ gap:8, marginBottom:28, "--cols": balancedColumns(12, 4) }}>
-              {groupData.map(({ gKey, correct, scored, isPerfect, isPerfectOrder, orderPts }) => (
+              {groupData.map(({ gKey, correct, scored, isPerfectOrder, orderPts, correctSlots }) => (
                 <div key={gKey} style={{
-                  background: isPerfect
-                    ? `linear-gradient(135deg, rgba(196,159,75,0.12), ${C.surface})`
-                    : C.surface,
-                  border:`1px solid ${isPerfect ? C.gold : isPerfectOrder ? C.green : C.border}`,
-                  borderRadius:8, padding:"12px 14px", textAlign:"center",
+                  background: isPerfectOrder ? `linear-gradient(135deg, rgba(196,159,75,0.12), ${C.surface})` : C.surface,
+                  border:`1px solid ${isPerfectOrder ? C.gold : C.border}`,
+                  borderRadius:8, padding:"14px 14px 12px", textAlign:"center",
                   position:"relative", opacity: scored === 0 ? 0.4 : 1,
                 }}>
-                  {isPerfect && (
+                  {isPerfectOrder && (
                     <div style={{
                       position:"absolute", top:-8, left:"50%", transform:"translateX(-50%)",
                       background:C.gold, color:"#000", fontSize:8, fontWeight:900,
                       fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em",
                       padding:"2px 8px", borderRadius:10, textTransform:"uppercase",
                       whiteSpace:"nowrap",
-                    }}>★ Perfect</div>
+                    }}>★ Perfect Order</div>
                   )}
-                  <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:18, fontWeight:900, color:isPerfect ? C.gold : C.mutedLight, marginBottom:4 }}>
+                  <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:isPerfectOrder ? C.gold : C.mutedLight, marginBottom:6 }}>
                     Group {gKey}
                   </div>
                   {scored > 0 ? (
                     <>
-                      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:22, fontWeight:900, color:isPerfect ? C.gold : correct === scored ? C.green : C.white }}>
+                      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:20, fontWeight:900, color:correct === scored ? C.green : C.white, lineHeight:1 }}>
                         {correct}/{scored}
                       </div>
-                      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:8, color:C.mutedLight, letterSpacing:"0.1em", textTransform:"uppercase", marginTop:2 }}>
-                        correct
+                      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:8, color:C.mutedLight, letterSpacing:"0.1em", textTransform:"uppercase", marginTop:2, marginBottom:6 }}>
+                        matches
                       </div>
-                      {orderPts > 0 && (
-                        <div style={{ marginTop:6, fontSize:9, color:isPerfectOrder ? C.green : C.mutedLight, fontFamily:"'League Spartan',sans-serif", fontWeight:700 }}>
-                          {isPerfectOrder ? "✓ Order" : `+${orderPts}`} order pts
+                      {orderPts > 0 ? (
+                        <div style={{ fontSize:9, color:isPerfectOrder ? C.gold : C.green, fontFamily:"'League Spartan',sans-serif", fontWeight:700 }}>
+                          {isPerfectOrder ? "✓ Perfect order" : `${correctSlots}/4 order slots`}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize:9, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif" }}>
+                          order pending
                         </div>
                       )}
                     </>
@@ -2241,7 +2242,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
   // ── Competitive award holders — compute every user's stats, find who's leading each category ──
   const allUserStats = sorted.map(e => ({
     name: e.name,
-    stats: calcUserStats(e._scores || {}, liveScores, e.champion, e.knockoutPicks || {}),
+    stats: calcUserStats(e._scores || {}, liveScores || {}, e.champion, e.knockoutPicks || {}),
   }));
 
   // For each award category, find the entry with the highest qualifying value (and confirm they actually hold it, i.e. value > 0)
@@ -2548,8 +2549,8 @@ function PlayerProfileTab({ entry, liveScores, onBack }) {
   const theirScores = entry.scores || {};
   const theirChampion = entry.champion || "";
   const theirKnockout = entry.knockoutPicks || {};
-  const qualifyingThirds = getThirdPlaceQualifiers(theirScores, liveScores);
-  const stats = calcUserStats(theirScores, liveScores, theirChampion, theirKnockout);
+  const qualifyingThirds = getThirdPlaceQualifiers(theirScores, liveScores || {});
+  const stats = calcUserStats(theirScores, liveScores || {}, theirChampion, theirKnockout);
   const champCode = TEAM_FLAGS[theirChampion];
 
   return (
