@@ -106,7 +106,10 @@ function calcStandings(groupKey, scores, liveScores = {}) {
     const key = `${groupKey}-${idx}`;
     const live = liveScores[key];
     const user = scores[key];
-    const src = (live && live.status === "FINISHED") ? live : user;
+    // Use live score if it has data (regardless of status — API sometimes returns stale
+    // SCHEDULED/TIMED status on matches that are clearly done). Fall back to user score.
+    const hasLiveData = live && live.home !== null && live.home !== undefined && live.home !== "";
+    const src = hasLiveData ? live : user;
     if (!src || src.home === "" || src.away === "" || src.home === null) return;
     const hg = parseInt(src.home), ag = parseInt(src.away);
     if (isNaN(hg) || isNaN(ag)) return;
@@ -162,14 +165,19 @@ function getGroupWinners(scores, liveScores={}) {
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
 function scoreResult(pred, real) {
-  if(!pred||pred.home===""||pred.away===""||!real||real.status!=="FINISHED") return null;
-  const ph=parseInt(pred.home),pa=parseInt(pred.away);
-  const rh=real.home,ra=real.away;
-  if(isNaN(ph)||isNaN(pa)) return null;
-  if(ph===rh&&pa===ra) return "exact";
-  const predRes = ph>pa?"H":ph<pa?"A":"D";
-  const realRes = rh>ra?"H":rh<ra?"A":"D";
-  if(predRes===realRes) return "correct";
+  // Use actual score data to determine result — don't require status === "FINISHED"
+  // since the API sometimes returns stale statuses on completed matches.
+  if (!pred || pred.home === "" || pred.away === "") return null;
+  if (!real || real.home === null || real.home === undefined || real.home === "") return null;
+  const ph = parseInt(pred.home), pa = parseInt(pred.away);
+  const rh = parseInt(real.home), ra = parseInt(real.away);
+  if (isNaN(ph) || isNaN(pa) || isNaN(rh) || isNaN(ra)) return null;
+  // Only score if the match is actually complete (has a result + not just scheduled)
+  if (real.status === "SCHEDULED" || real.status === "TIMED") return null;
+  if (ph === rh && pa === ra) return "exact";
+  const predRes = ph > pa ? "H" : ph < pa ? "A" : "D";
+  const realRes = rh > ra ? "H" : rh < ra ? "A" : "D";
+  if (predRes === realRes) return "correct";
   return "wrong";
 }
 
@@ -961,46 +969,80 @@ function GroupCard({ groupKey, scores, onScore, qualifyingThirds, liveScores }) 
     return liveScores[k]?.status === "IN_PLAY" || liveScores[k]?.status === "PAUSED";
   });
 
+  // Per-group scoring: how many did the user get right, and is it perfect?
+  let correct = 0, scored = 0;
+  group.matches.forEach((_,idx) => {
+    const key = `${groupKey}-${idx}`;
+    const r = scoreResult(scores[key], liveScores[key]);
+    if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
+  });
+  const isPerfectGroup = scored === 6 && correct === 6;
+  const hasAnyScored = scored > 0;
+
+  // Perfect GROUP ORDER — all 4 teams in the right finishing slot
+  const groupOrderResult = calcGroupOrderScore(groupKey, scores, liveScores);
+  const isPerfectOrder = groupOrderResult?.isPerfect ?? false;
+
+  const borderColor = isPerfectGroup ? C.gold : hasLive ? C.green : C.border;
+  const headerGlow = isPerfectGroup ? "0 0 20px rgba(196,159,75,0.25)" : "none";
+
   return (
-    <div className="group-card fade-in" style={{ background:C.surface,border:`2px solid ${hasLive?C.green:C.border}`,borderRadius:8,overflow:"hidden" }}>
-      <div style={{ padding:"11px 14px",borderBottom:`1px solid ${C.border}`,background:`linear-gradient(135deg,${C.greenDark} 0%,#031A0E 100%)`,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-          <div style={{ width:4,height:22,background:C.green,borderRadius:2,flexShrink:0 }} />
-          <span style={{ fontFamily:"'League Spartan',sans-serif",fontSize:16,fontWeight:900,color:C.white,letterSpacing:"0.05em",textTransform:"uppercase" }}>Group {groupKey}</span>
-          {hasLive && <span className="live-dot" style={{ fontSize:8,color:C.green }}>● LIVE</span>}
+    <div className="group-card fade-in" style={{ background:C.surface, border:`2px solid ${borderColor}`, borderRadius:8, overflow:"hidden", boxShadow:headerGlow }}>
+      <div style={{ padding:"11px 14px", borderBottom:`1px solid ${C.border}`, background:`linear-gradient(135deg,${C.greenDark} 0%,#031A0E 100%)`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ width:4, height:22, background:isPerfectGroup ? C.gold : C.green, borderRadius:2, flexShrink:0 }} />
+          <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:isPerfectGroup ? C.gold : C.white, letterSpacing:"0.05em", textTransform:"uppercase" }}>
+            Group {groupKey}
+          </span>
+          {hasLive && <span className="live-dot" style={{ fontSize:8, color:C.green }}>● LIVE</span>}
+          {isPerfectGroup && (
+            <span style={{ fontSize:10, background:"rgba(196,159,75,0.2)", border:`1px solid ${C.gold}`, borderRadius:4, padding:"2px 7px", fontFamily:"'League Spartan',sans-serif", fontWeight:900, color:C.gold, letterSpacing:"0.08em", textTransform:"uppercase" }}>
+              ★ Perfect
+            </span>
+          )}
+          {!isPerfectGroup && isPerfectOrder && (
+            <span style={{ fontSize:10, background:"rgba(90,148,123,0.15)", border:`1px solid ${C.green}`, borderRadius:4, padding:"2px 7px", fontFamily:"'League Spartan',sans-serif", fontWeight:900, color:C.green, letterSpacing:"0.08em", textTransform:"uppercase" }}>
+              ✓ Order
+            </span>
+          )}
         </div>
-        <div style={{ display:"flex",gap:4 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {hasAnyScored && (
+            <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, fontWeight:700, color:isPerfectGroup ? C.gold : C.mutedLight, letterSpacing:"0.06em" }}>
+              {correct}/{scored}
+            </span>
+          )}
           {standings.slice(0,2).map(row=><Flag key={row.team} team={row.team} size={14} />)}
         </div>
       </div>
 
       {/* Standings */}
-      <table style={{ width:"100%",borderCollapse:"collapse" }}>
+      <table style={{ width:"100%", borderCollapse:"collapse" }}>
         <thead>
-          <tr style={{ background:"#050D08",borderBottom:`1px solid ${C.border}` }}>
+          <tr style={{ background:"#050D08", borderBottom:`1px solid ${C.border}` }}>
             {["#","Team","P","GD","Pts"].map((h,i)=>(
-              <th key={h} style={{ padding:i===0?"6px 4px 6px 12px":"6px 8px",textAlign:i>1?"right":"left",fontSize:9,letterSpacing:"0.12em",color:C.muted,textTransform:"uppercase",fontWeight:600,fontFamily:"'League Spartan',sans-serif" }}>{h}</th>
+              <th key={h} style={{ padding:i===0?"6px 4px 6px 12px":"6px 8px", textAlign:i>1?"right":"left", fontSize:9, letterSpacing:"0.12em", color:C.muted, textTransform:"uppercase", fontWeight:600, fontFamily:"'League Spartan',sans-serif" }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {standings.map((row,i)=>{
-            const top2=i<2,isThird=i===2;
+            const top2=i<2, isThird=i===2;
             const thirdIn=isThird&&qualifyingThirds&&qualifyingThirds.has(row.team)&&row.played>0;
             return (
-              <tr key={row.team} style={{ background:top2?"rgba(90,148,123,0.08)":thirdIn?"rgba(90,148,123,0.12)":"transparent",borderTop:`1px solid ${C.border}` }}>
+              <tr key={row.team} style={{ background:top2?"rgba(90,148,123,0.08)":thirdIn?"rgba(90,148,123,0.12)":"transparent", borderTop:`1px solid ${C.border}` }}>
                 <td style={{ padding:"8px 4px 8px 12px" }}>
-                  <div style={{ width:18,height:18,borderRadius:3,background:i===0?C.gold:i===1?C.green:thirdIn?"#1C3D2C":"transparent",color:i===0?"#000":i<=1||thirdIn?"#fff":C.dim,fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'League Spartan',sans-serif",border:thirdIn&&i===2?`1px solid ${C.green}`:"none" }}>{i+1}</div>
+                  <div style={{ width:18, height:18, borderRadius:3, background:i===0?C.gold:i===1?C.green:thirdIn?"#1C3D2C":"transparent", color:i===0?"#000":i<=1||thirdIn?"#fff":C.dim, fontSize:9, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'League Spartan',sans-serif", border:thirdIn&&i===2?`1px solid ${C.green}`:"none" }}>{i+1}</div>
                 </td>
-                <td style={{ padding:"7px 8px",fontSize:12,color:top2?C.white:thirdIn?C.green:C.muted,fontFamily:"'Quicksand',sans-serif",fontWeight:500 }}>
-                  <span style={{ display:"inline-flex",alignItems:"center",gap:7 }}>
+                <td style={{ padding:"7px 8px", fontSize:12, color:top2?C.white:thirdIn?C.green:C.muted, fontFamily:"'Quicksand',sans-serif", fontWeight:500 }}>
+                  <span style={{ display:"inline-flex", alignItems:"center", gap:7 }}>
                     <Flag team={row.team} size={14} />{row.team}
-                    {thirdIn&&<span style={{ fontSize:8,letterSpacing:"0.1em",textTransform:"uppercase",color:C.green,background:C.tealDim,border:`1px solid ${C.tealBorder}`,borderRadius:3,padding:"1px 5px",fontWeight:700,fontFamily:"'League Spartan',sans-serif" }}>IN</span>}
+                    {thirdIn&&<span style={{ fontSize:8, letterSpacing:"0.1em", textTransform:"uppercase", color:C.green, background:C.tealDim, border:`1px solid ${C.tealBorder}`, borderRadius:3, padding:"1px 5px", fontWeight:700, fontFamily:"'League Spartan',sans-serif" }}>IN</span>}
                   </span>
                 </td>
-                <td style={{ padding:"7px 8px",textAlign:"right",fontSize:12,color:C.muted,fontFamily:"'League Spartan',sans-serif" }}>{row.played}</td>
-                <td style={{ padding:"7px 8px",textAlign:"right",fontSize:12,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:row.gd>0?C.posGreen:row.gd<0?C.negRed:C.muted }}>{row.gd>0?`+${row.gd}`:row.gd}</td>
-                <td style={{ padding:"7px 12px 7px 8px",textAlign:"right",fontSize:13,fontWeight:700,fontFamily:"'League Spartan',sans-serif",color:top2?C.gold:thirdIn?C.green:C.muted }}>{row.pts}</td>
+                <td style={{ padding:"7px 8px", textAlign:"right", fontSize:12, color:C.muted, fontFamily:"'League Spartan',sans-serif" }}>{row.played}</td>
+                <td style={{ padding:"7px 8px", textAlign:"right", fontSize:12, fontWeight:700, fontFamily:"'League Spartan',sans-serif", color:row.gd>0?C.posGreen:row.gd<0?C.negRed:C.muted }}>{row.gd>0?`+${row.gd}`:row.gd}</td>
+                <td style={{ padding:"7px 12px 7px 8px", textAlign:"right", fontSize:13, fontWeight:700, fontFamily:"'League Spartan',sans-serif", color:top2?C.gold:thirdIn?C.green:C.muted }}>{row.pts}</td>
               </tr>
             );
           })}
@@ -1721,6 +1763,71 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
               </div>
             ))}
           </div>
+        );
+      })()}
+
+      {/* ── GROUP PERFORMANCE BREAKDOWN ── */}
+      {(() => {
+        const groupData = Object.keys(GROUPS).map(gKey => {
+          let correct = 0, scored = 0;
+          GROUPS[gKey].matches.forEach((_,idx) => {
+            const key = `${gKey}-${idx}`;
+            const r = scoreResult(scores[key], liveScores[key]);
+            if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
+          });
+          const orderResult = calcGroupOrderScore(gKey, scores, liveScores || {});
+          const isPerfect = scored === 6 && correct === 6;
+          const isPerfectOrder = orderResult?.isPerfect ?? false;
+          return { gKey, correct, scored, isPerfect, isPerfectOrder, orderPts: orderResult?.points ?? 0 };
+        });
+        const anyScored = groupData.some(g => g.scored > 0);
+        if (!anyScored) return null;
+        return (
+          <>
+            <SectionHeader title="Group Performance" />
+            <div className="balanced-grid" style={{ gap:8, marginBottom:28, "--cols": balancedColumns(12, 4) }}>
+              {groupData.map(({ gKey, correct, scored, isPerfect, isPerfectOrder, orderPts }) => (
+                <div key={gKey} style={{
+                  background: isPerfect
+                    ? `linear-gradient(135deg, rgba(196,159,75,0.12), ${C.surface})`
+                    : C.surface,
+                  border:`1px solid ${isPerfect ? C.gold : isPerfectOrder ? C.green : C.border}`,
+                  borderRadius:8, padding:"12px 14px", textAlign:"center",
+                  position:"relative", opacity: scored === 0 ? 0.4 : 1,
+                }}>
+                  {isPerfect && (
+                    <div style={{
+                      position:"absolute", top:-8, left:"50%", transform:"translateX(-50%)",
+                      background:C.gold, color:"#000", fontSize:8, fontWeight:900,
+                      fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em",
+                      padding:"2px 8px", borderRadius:10, textTransform:"uppercase",
+                      whiteSpace:"nowrap",
+                    }}>★ Perfect</div>
+                  )}
+                  <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:18, fontWeight:900, color:isPerfect ? C.gold : C.mutedLight, marginBottom:4 }}>
+                    Group {gKey}
+                  </div>
+                  {scored > 0 ? (
+                    <>
+                      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:22, fontWeight:900, color:isPerfect ? C.gold : correct === scored ? C.green : C.white }}>
+                        {correct}/{scored}
+                      </div>
+                      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:8, color:C.mutedLight, letterSpacing:"0.1em", textTransform:"uppercase", marginTop:2 }}>
+                        correct
+                      </div>
+                      {orderPts > 0 && (
+                        <div style={{ marginTop:6, fontSize:9, color:isPerfectOrder ? C.green : C.mutedLight, fontFamily:"'League Spartan',sans-serif", fontWeight:700 }}>
+                          {isPerfectOrder ? "✓ Order" : `+${orderPts}`} order pts
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:10, color:C.mutedLight }}>No results yet</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
         );
       })()}
 
