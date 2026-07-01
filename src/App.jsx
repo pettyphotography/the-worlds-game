@@ -76,6 +76,31 @@ const GROUPS = {
 // ── R32 Confirmed Fixtures ────────────────────────────────────────────────────
 // Hardcoded from official FIFA R32 schedule. Two slots (Spain's opponent and
 // Switzerland's opponent) are still TBD pending tonight's Group J/L results.
+// ── One-time migration support ──────────────────────────────────────────────
+// The R32 match numbering below was corrected against official FIFA sources.
+// Before the fix, these 16 IDs pointed at different (wrong) team pairs. Anyone
+// who saved a knockout pick before this fix has it stored under the OLD id.
+// This is the OLD mapping, kept only so migrateKnockoutPicks can recover those
+// picks — never used anywhere else.
+const OLD_R32_MATCHES = [
+  { id:73, home:"South Africa",    away:"Canada" },
+  { id:74, home:"Brazil",          away:"Japan" },
+  { id:75, home:"Germany",         away:"Paraguay" },
+  { id:76, home:"Netherlands",     away:"Morocco" },
+  { id:77, home:"Ivory Coast",     away:"Norway" },
+  { id:78, home:"France",          away:"Sweden" },
+  { id:79, home:"Mexico",          away:"Ecuador" },
+  { id:80, home:"England",         away:"DR Congo" },
+  { id:81, home:"Belgium",         away:"Senegal" },
+  { id:82, home:"USA",             away:"Bosnia & Herzegovina" },
+  { id:83, home:"Spain",           away:"Austria" },
+  { id:84, home:"Portugal",        away:"Croatia" },
+  { id:85, home:"Switzerland",     away:"Algeria" },
+  { id:86, home:"Australia",       away:"Egypt" },
+  { id:87, home:"Argentina",       away:"Cabo Verde" },
+  { id:88, home:"Colombia",        away:"Ghana" },
+];
+
 const R32_MATCHES = [
   { id:73, home:"South Africa",        away:"Canada",                   date:"Jun 28", time:"3:00 PM ET" },
   { id:74, home:"Germany",             away:"Paraguay",                 date:"Jun 28", time:"4:30 PM ET" },
@@ -94,6 +119,41 @@ const R32_MATCHES = [
   { id:87, home:"Colombia",            away:"Ghana",                    date:"Jul 3",  time:"9:30 PM ET" },
   { id:88, home:"Australia",           away:"Egypt",                    date:"Jul 3",  time:"2:00 PM ET" },
 ];
+
+// Recovers picks saved before the R32 numbering fix. R32 (73-88) picks are fully
+// recoverable — same 16 team pairs, just relocated to correct IDs, so we can find
+// the right new home for each one with total confidence, orientation preserved.
+// R16-through-Final picks (89-104) are NOT recoverable — the matchups downstream
+// of a wrong R32 numbering don't correspond to anything real in the corrected
+// bracket, so guessing at them risks assigning someone a pick they never made.
+// Those are cleared; the person needs to re-pick from R16 onward.
+// Self-verifying and safe to run on every load: if a pick already matches the
+// current (correct) team pair for its id, it's left untouched — so this can
+// never double-migrate or corrupt already-correct data.
+function migrateKnockoutPicks(picks) {
+  if (!picks || typeof picks !== "object") return picks || {};
+  const migrated = {};
+  Object.entries(picks).forEach(([idStr, val]) => {
+    const id = parseInt(idStr, 10);
+    if (isNaN(id)) return;
+    const pickTeam = typeof val === "string" ? val : val?.team;
+    if (id < 73 || id > 88) return; // R16+ — dropped, not recoverable
+    const newMatch = R32_MATCHES.find(m => m.id === id);
+    const alreadyCorrect = newMatch && (pickTeam === newMatch.home || pickTeam === newMatch.away);
+    if (alreadyCorrect) {
+      migrated[id] = val;
+      return;
+    }
+    const oldMatch = OLD_R32_MATCHES.find(m => m.id === id);
+    if (!oldMatch) return;
+    const correctSlot = R32_MATCHES.find(m =>
+      (m.home === oldMatch.home && m.away === oldMatch.away) ||
+      (m.home === oldMatch.away && m.away === oldMatch.home)
+    );
+    if (correctSlot) migrated[correctSlot.id] = val; // orientation verified to match in every case
+  });
+  return migrated;
+}
 
 // Verified, confirmed-final results for knockout matches that are 100% complete.
 // home/away = the regulation+extra-time scoreline (before penalties, if any).
@@ -2709,7 +2769,7 @@ function LeaderboardTab({ userName, scores, liveScores, champion, knockoutPicks,
         champion: r.champion,
         pts: 0, // calculated dynamically from live scores below
         scores: r.scores || {},
-        knockoutPicks: r.knockout_picks || {},
+        knockoutPicks: migrateKnockoutPicks(r.knockout_picks),
       }));
       setEntries(mapped);
       setAllPredictions(rows);
@@ -3269,7 +3329,7 @@ export default function App() {
         if (d) {
           setScores(d.scores || {});
           setChampion(d.champion || "");
-          setKnockoutPicks(d.knockout_picks || {});
+          setKnockoutPicks(migrateKnockoutPicks(d.knockout_picks));
         }
       }
       setLoading(false);
@@ -3330,7 +3390,7 @@ export default function App() {
       if (existing) {
         setScores(existing.scores || {});
         setChampion(existing.champion || "");
-        setKnockoutPicks(existing.knockout_picks || {});
+        setKnockoutPicks(migrateKnockoutPicks(existing.knockout_picks));
       }
     }
     const ok = await saveUserPredictions(name, scores, champion, knockoutPicks);
