@@ -1530,6 +1530,29 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
   };
   const getWinnerOfMatch = getPickTeam;
 
+  // A match is locked from editing once it's actually live or finished in the real
+  // world — same principle as the group stage locking, just driven by the real
+  // knockout resolver instead of the group liveScores object.
+  const isKoMatchLocked = (matchId) => {
+    const real = resolveKnockoutMatch(matchId, koApiMatches || []);
+    return !!(real && (real.status === "IN_PLAY" || real.status === "PAUSED" || real.status === "FINISHED"));
+  };
+  const koMatchStatus = (matchId) => resolveKnockoutMatch(matchId, koApiMatches || [])?.status || null;
+
+  // Small lock badge, matching the group stage's visual language
+  const LockBadge = ({ status }) => (
+    <span style={{
+      fontSize:8, fontFamily:"'League Spartan',sans-serif", fontWeight:700,
+      color: status === "FINISHED" ? C.muted : C.green,
+      letterSpacing:"0.1em", textTransform:"uppercase",
+      background: status === "FINISHED" ? "rgba(40,40,40,0.6)" : C.tealDim,
+      border:`1px solid ${status === "FINISHED" ? C.border : C.tealBorder}`,
+      borderRadius:3, padding:"1px 6px", display:"inline-flex", alignItems:"center", gap:3,
+    }}>
+      <span style={{ fontSize:7 }}>🔒</span>{status === "FINISHED" ? "Locked" : "Locked · Live"}
+    </span>
+  );
+
   // Round structure is derived from KO_SOURCES — the single source of truth also
   // used by resolveKnockoutMatch for real results, so the picks bracket and the
   // real bracket can never disagree about who plays whom.
@@ -1571,7 +1594,8 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
     const pickTeam = pickData ? (typeof pickData === "string" ? pickData : pickData.team) : null;
     const pickHome = pickData && typeof pickData !== "string" ? pickData.home : "";
     const pickAway = pickData && typeof pickData !== "string" ? pickData.away : "";
-    const canPick = !!(homeTeam && awayTeam);
+    const locked = isKoMatchLocked(matchId);
+    const canPick = !!(homeTeam && awayTeam) && !locked;
 
     const handleScoreInput = (side, val) => {
       const currentTeam = pickTeam;
@@ -1628,7 +1652,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
               Match {matchId} · {roundLabel}
             </span>
           </div>
-          {pickTeam && <span style={{ fontSize:8, color:C.gold, fontFamily:"'League Spartan',sans-serif", fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase" }}>Picked</span>}
+          {locked ? <LockBadge status={koMatchStatus(matchId)} /> : pickTeam && <span style={{ fontSize:8, color:C.gold, fontFamily:"'League Spartan',sans-serif", fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase" }}>Picked</span>}
         </div>
 
         <div style={{ padding:"10px" }}>
@@ -1650,7 +1674,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
             onClick={() => onKnockoutPick(matchId, awayTeam, pickHome, pickAway)}
           />
 
-          {canPick && (
+          {homeTeam && awayTeam && !locked && (
             <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10 }}>
               <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", textAlign:"center", marginBottom:8 }}>
                 Predict final score
@@ -1665,6 +1689,17 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                   Tap a team or use + to predict the score
                 </div>
               )}
+            </div>
+          )}
+
+          {homeTeam && awayTeam && locked && (pickHome !== "" || pickTeam) && (
+            <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, textAlign:"center" }}>
+              <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>
+                Your locked prediction
+              </div>
+              <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:C.mutedLight }}>
+                {pickHome !== "" ? `${pickHome} : ${pickAway}` : pickTeam}
+              </div>
             </div>
           )}
         </div>
@@ -1850,8 +1885,8 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
             const pick = pickData ? (typeof pickData === "string" ? pickData : pickData.team) : null;
             const pickHome = pickData && typeof pickData !== "string" ? pickData.home : "";
             const pickAway = pickData && typeof pickData !== "string" ? pickData.away : "";
-            const canPick = !!(homeWinner && awayWinner);
-            const inputStyle = { width:36, height:32, background:"#050D08", border:`1px solid ${C.border}`, borderRadius:4, color:C.white, fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, textAlign:"center", outline:"none" };
+            const locked = isKoMatchLocked(m.id);
+            const canPick = !!(homeWinner && awayWinner) && !locked;
             return (
               <div key={m.id} style={{
                 background:`linear-gradient(135deg, ${C.greenDeep} 0%, #000 100%)`,
@@ -1860,7 +1895,10 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                 boxShadow: pick ? `0 0 30px rgba(196,159,75,0.15)` : "none",
                 transition:"all 0.3s",
               }}>
-                <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, color:C.gold, fontWeight:900, letterSpacing:"0.14em", textTransform:"uppercase", marginBottom:14, textAlign:"center" }}>Semifinal · Match {m.id}</div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, marginBottom:14 }}>
+                  <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:10, color:C.gold, fontWeight:900, letterSpacing:"0.14em", textTransform:"uppercase", textAlign:"center" }}>Semifinal · Match {m.id}</div>
+                  {locked && <LockBadge status={koMatchStatus(m.id)} />}
+                </div>
                 <TeamPill team={homeWinner} source={`Winner M${m.src[0]}`}
                   isPick={pick === homeWinner} isClickable={canPick}
                   onClick={() => onKnockoutPick(m.id, homeWinner, pickHome, pickAway)}
@@ -1891,6 +1929,12 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                     ))}
                   </div>
                 )}
+                {locked && (pickHome !== "" || pick) && (
+                  <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, textAlign:"center" }}>
+                    <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Your locked prediction</div>
+                    <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:C.mutedLight }}>{pickHome !== "" ? `${pickHome} : ${pickAway}` : pick}</div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1915,9 +1959,13 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
             <div style={{
               fontFamily:"'Quicksand',sans-serif", fontSize:10, color:"#CD7F32",
               letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:10, textAlign:"center",
-            }}>Bronze medal match · Match 103</div>
+              display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+            }}>
+              Bronze medal match · Match 103
+              {isKoMatchLocked(103) && <LockBadge status={koMatchStatus(103)} />}
+            </div>
             <TeamPill team={tpHome} source="Loser SF1"
-              isPick={getPickTeam(103) === tpHome} isClickable={!!(tpHome && tpAway)}
+              isPick={getPickTeam(103) === tpHome} isClickable={!!(tpHome && tpAway) && !isKoMatchLocked(103)}
               onClick={() => { const p=knockoutPicks[103]; const ph=p&&typeof p!=="string"?p.home:""; const pa=p&&typeof p!=="string"?p.away:""; onKnockoutPick(103, tpHome, ph, pa); }}
             />
             <div style={{ display:"flex", alignItems:"center", gap:8, margin:"7px 0" }}>
@@ -1926,7 +1974,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
               <div style={{ flex:1, height:1, background:C.border }} />
             </div>
             <TeamPill team={tpAway} source="Loser SF2"
-              isPick={getPickTeam(103) === tpAway} isClickable={!!(tpHome && tpAway)}
+              isPick={getPickTeam(103) === tpAway} isClickable={!!(tpHome && tpAway) && !isKoMatchLocked(103)}
               onClick={() => { const p=knockoutPicks[103]; const ph=p&&typeof p!=="string"?p.home:""; const pa=p&&typeof p!=="string"?p.away:""; onKnockoutPick(103, tpAway, ph, pa); }}
             />
           </div>
@@ -2016,8 +2064,8 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
               </div>
             ) : null}
 
-            {/* Pick interface (only show when both finalists known) */}
-            {finalHome && finalAway ? (
+            {/* Pick interface (only show when both finalists known and not locked) */}
+            {finalHome && finalAway && !isKoMatchLocked(104) ? (
               <div style={{
                 background:"rgba(0,0,0,0.4)", border:`1px solid ${C.border}`,
                 borderRadius:10, padding:"16px 18px", maxWidth:420, margin:"0 auto",
@@ -2032,7 +2080,6 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                   const fp = knockoutPicks[104];
                   const fph = fp && typeof fp !== "string" ? fp.home : "";
                   const fpa = fp && typeof fp !== "string" ? fp.away : "";
-                  const inputStyle = { width:40, height:36, background:"#050D08", border:`1px solid ${C.border}`, borderRadius:4, color:C.white, fontFamily:"'League Spartan',sans-serif", fontSize:18, fontWeight:900, textAlign:"center", outline:"none" };
                   return (
                     <>
                       <div onClick={() => onKnockoutPick(104, finalHome, fph, fpa)} style={{
@@ -2081,6 +2128,16 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                     </>
                   );
                 })()}
+              </div>
+            ) : finalHome && finalAway && isKoMatchLocked(104) ? (
+              <div style={{
+                background:"rgba(0,0,0,0.4)", border:`1px solid ${C.border}`,
+                borderRadius:10, padding:"16px 18px", maxWidth:420, margin:"0 auto", textAlign:"center",
+              }}>
+                <div style={{ marginBottom:10 }}><LockBadge status={koMatchStatus(104)} /></div>
+                <div style={{ fontSize:12, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif" }}>
+                  Your Final pick is locked in — the match has {koMatchStatus(104)==="FINISHED"?"finished":"started"}.
+                </div>
               </div>
             ) : (
               <div style={{
