@@ -489,7 +489,7 @@ const HARDCODED_RESULTS = {
   "D-0": { home:4, away:1, status:"FINISHED" }, // United States 4-1 Paraguay
   "D-1": { home:2, away:0, status:"FINISHED" }, // Australia 2-0 Turkiye
   "D-2": { home:2, away:0, status:"FINISHED" }, // United States 2-0 Australia
-  "D-3": { home:0, away:1, status:"FINISHED" }, // Turkiye 0-1 Paraguay
+  "D-3": { home:1, away:0, status:"FINISHED" }, // Paraguay 1-0 Turkiye (was previously reversed — real bug, now fixed)
   "D-4": { home:2, away:3, status:"FINISHED" }, // United States 2-3 Turkiye
   "D-5": { home:0, away:0, status:"FINISHED" }, // Paraguay 0-0 Australia
 
@@ -603,22 +603,30 @@ function calcGroupOrderScore(groupKey, userScores, liveScores) {
 
   const predictedStandings = calcStandings(groupKey, blendedForPrediction, {});
 
-  // All 4 teams must have played 3 games in the predicted standings
-  const predictedAllPlayed = predictedStandings.length === 4 &&
+  // Teams with a complete 3-game predicted record CAN be scored — no need for
+  // every team in the group to be complete before scoring any of them. A team
+  // with an incomplete record (a blank match somewhere) simply doesn't score
+  // for its slot: no credit, no penalty, no guessing at the missing result.
+  const isComplete = predictedStandings.length === 4 &&
     predictedStandings.every(team => team.played === 3);
-  if (!predictedAllPlayed) return null;
 
   const actualOrder = actualStandings.map(s => s.team);
   const predictedOrder = predictedStandings.map(s => s.team);
+  const completeTeams = new Set(predictedStandings.filter(t => t.played === 3).map(t => t.team));
 
   let correctSlots = 0;
   for (let i = 0; i < 4; i++) {
-    if (actualOrder[i] === predictedOrder[i]) correctSlots++;
+    // Only count a slot if that team's predicted record was fully filled in —
+    // otherwise its position was determined from incomplete data and can't be
+    // trusted either way.
+    if (actualOrder[i] === predictedOrder[i] && completeTeams.has(predictedOrder[i])) correctSlots++;
   }
-  const isPerfect = correctSlots === 4;
+  // Perfect bonus requires the whole group to be filled in — can't call it
+  // "perfect" with a piece missing, even if the completed pieces line up.
+  const isPerfect = isComplete && correctSlots === 4;
   const points = (correctSlots * GROUP_ORDER_PTS_PER_SLOT) + (isPerfect ? GROUP_ORDER_PERFECT_BONUS : 0);
 
-  return { points, correctSlots, isPerfect, actualOrder, predictedOrder };
+  return { points, correctSlots, isPerfect, isComplete, actualOrder, predictedOrder };
 }
 
 // Total group-order points across all 12 groups for one user
@@ -630,7 +638,7 @@ function calcTotalGroupOrderPoints(userScores, liveScores) {
     const result = calcGroupOrderScore(gKey, userScores, liveScores);
     if (result) {
       total += result.points;
-      groupsScored++;
+      if (result.correctSlots > 0) groupsScored++;
       if (result.isPerfect) perfectCount++;
     }
   });
