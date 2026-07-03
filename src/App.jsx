@@ -3293,7 +3293,8 @@ function PlayerProfileTab({ entry, liveScores, onBack, koApiMatches }) {
   const theirScores = entry.scores || {};
   const theirChampion = entry.champion || "";
   const theirKnockout = entry.knockoutPicks || {};
-  const qualifyingThirds = getThirdPlaceQualifiers(theirScores, liveScores || {});
+  // Predicted qualification, not real — same reasoning as the standings fix below.
+  const qualifyingThirds = getThirdPlaceQualifiers(theirScores, {});
 
   return (
     <div className="fade-in">
@@ -3320,7 +3321,10 @@ function PlayerProfileTab({ entry, liveScores, onBack, koApiMatches }) {
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",gap:12 }}>
         {Object.keys(GROUPS).map(g => {
           const safeLive = liveScores || {};
-          const standings = calcStandings(g, theirScores, safeLive);
+          // Display standings from their predictions ONLY — passing real live
+          // data here would silently overwrite their picks with actual results
+          // wherever results exist, making the table lie about what they predicted.
+          const standings = calcStandings(g, theirScores, {});
           let orderResult = null;
           try { orderResult = calcGroupOrderScore(g, theirScores, safeLive); } catch(e) {}
           const isPerfectOrder = orderResult?.isPerfect ?? false;
