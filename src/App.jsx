@@ -2503,15 +2503,15 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
                         {correct}/{scored}
                       </div>
                       <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:8, color:C.mutedLight, letterSpacing:"0.1em", textTransform:"uppercase", marginTop:2, marginBottom:6 }}>
-                        matches
+                        correct picks{scored < 6 ? ` (${scored}/6 predicted)` : ""}
                       </div>
-                      {orderPts > 0 ? (
-                        <div style={{ fontSize:9, color:isPerfectOrder ? C.gold : C.green, fontFamily:"'League Spartan',sans-serif", fontWeight:700 }}>
-                          {isPerfectOrder ? "✓ Perfect order" : `${correctSlots}/4 order slots`}
+                      {isPerfectOrder ? (
+                        <div style={{ fontSize:9, color:C.gold, fontFamily:"'League Spartan',sans-serif", fontWeight:700 }}>
+                          ✓ Perfect order
                         </div>
                       ) : (
-                        <div style={{ fontSize:9, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif" }}>
-                          order pending
+                        <div style={{ fontSize:9, color:correctSlots > 0 ? C.green : C.mutedLight, fontFamily:"'League Spartan',sans-serif", fontWeight:700 }}>
+                          {correctSlots}/4 order slots
                         </div>
                       )}
                     </>
