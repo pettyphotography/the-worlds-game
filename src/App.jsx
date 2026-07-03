@@ -39,6 +39,25 @@ const TEAM_FLAGS = {
   USA:"us","DR Congo":"cd","Ivory Coast":"ci",
 };
 
+// Standard 3-letter FIFA codes — used anywhere a full team name would overflow
+// a tight column (e.g. the "Your Pick" column on Official Knockout Scores).
+const TEAM_ABBR = {
+  Mexico:"MEX","South Africa":"RSA","South Korea":"KOR",Czechia:"CZE",
+  Canada:"CAN","Bosnia & Herzegovina":"BIH",Qatar:"QAT",Switzerland:"SUI",
+  Brazil:"BRA",Morocco:"MAR",Haiti:"HAI",Scotland:"SCO",
+  "United States":"USA",Paraguay:"PAR",Australia:"AUS",Turkiye:"TUR",
+  Germany:"GER",Curacao:"CUW","Cote d'Ivoire":"CIV",Ecuador:"ECU",
+  Netherlands:"NED",Japan:"JPN",Sweden:"SWE",Tunisia:"TUN",
+  Belgium:"BEL",Egypt:"EGY",Iran:"IRN","New Zealand":"NZL",
+  Spain:"ESP","Cabo Verde":"CPV","Saudi Arabia":"KSA",Uruguay:"URU",
+  France:"FRA",Senegal:"SEN",Iraq:"IRQ",Norway:"NOR",
+  Argentina:"ARG",Algeria:"ALG",Austria:"AUT",Jordan:"JOR",
+  Portugal:"POR","Congo DR":"COD",Uzbekistan:"UZB",Colombia:"COL",
+  England:"ENG",Croatia:"CRO",Ghana:"GHA",Panama:"PAN",
+  USA:"USA","DR Congo":"COD","Ivory Coast":"CIV",
+};
+function teamAbbr(team) { return TEAM_ABBR[team] || (team ? team.slice(0,3).toUpperCase() : "—"); }
+
 // Map API team names to our app team names
 const API_NAME_MAP = {
   "Mexico":"Mexico","South Africa":"South Africa","Korea Republic":"South Korea","Czechia":"Czechia",
@@ -1452,9 +1471,12 @@ function OfficialKnockoutTab({ koApiMatches, knockoutPicks }) {
           </div>
         </div>
         {pick && pick.team && (
-          <div style={{ textAlign:"right",flexShrink:0,borderLeft:`1px solid ${C.border}`,paddingLeft:12 }}>
+          <div style={{ textAlign:"center",flexShrink:0,borderLeft:`1px solid ${C.border}`,paddingLeft:12,minWidth:64 }}>
             <div style={{ fontSize:9,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:3,fontWeight:700 }}>Your Pick</div>
-            <div style={{ fontSize:13,fontWeight:900,fontFamily:"'League Spartan',sans-serif",color:result?ptColors[result]:C.white }}>{pick.team}</div>
+            <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:5 }}>
+              <Flag team={pick.team} size={14} />
+              <span style={{ fontSize:13,fontWeight:900,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.04em",color:result?ptColors[result]:C.white }}>{teamAbbr(pick.team)}</span>
+            </div>
             {result && <div style={{ fontSize:9,color:ptColors[result],fontFamily:"'League Spartan',sans-serif",fontWeight:700,textTransform:"uppercase",marginTop:1 }}>{result==="exact"?"+5":result==="correct"?"+3":"0"} pts</div>}
           </div>
         )}
@@ -2201,7 +2223,10 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
   const allPicks = Object.entries(knockoutPicks || {}).map(([id, val]) => {
     const team = typeof val === "string" ? val : val?.team;
     if (!team) return null;
-    return { id: parseInt(id), team, flag: TEAM_FLAGS[team] };
+    const numId = parseInt(id);
+    const r32 = R32_MATCHES.find(m => m.id === numId);
+    const opponent = r32 ? (r32.home === team ? r32.away : r32.home) : null;
+    return { id: numId, team, flag: TEAM_FLAGS[team], opponent };
   }).filter(Boolean);
 
   const r32Picks = allPicks.filter(p => p.id >= 73 && p.id <= 88);
@@ -2496,38 +2521,62 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
       {(r32Picks.length > 0 || r16Picks.length > 0 || finalPick) && (
         <>
           <SectionHeader title="Your Bracket Journey" />
-          <div style={{
-            background:C.surface, border:`1px solid ${C.border}`,
-            borderRadius:8, padding:"18px 18px", marginBottom:28,
-          }}>
+          <div style={{ marginBottom:28 }}>
             {[
-              { label:"Round of 32", picks:r32Picks, max:16 },
-              { label:"Round of 16", picks:r16Picks, max:8 },
-              { label:"Quarterfinals", picks:qfPicks, max:4 },
-              { label:"Semifinals", picks:sfPicks, max:2 },
-              { label:"Third Place", picks:thirdPick ? [thirdPick] : [], max:1 },
-              { label:"Final Champion", picks:finalPick ? [finalPick] : [], max:1, highlight:true },
+              { label:"Round of 32", picks:r32Picks, max:16, accent:C.green },
+              { label:"Round of 16", picks:r16Picks, max:8, accent:C.green },
+              { label:"Quarterfinals", picks:qfPicks, max:4, accent:C.gold },
+              { label:"Semifinals", picks:sfPicks, max:2, accent:C.gold },
+              { label:"Third Place", picks:thirdPick ? [thirdPick] : [], max:1, accent:"#CD7F32" },
+              { label:"Final Champion", picks:finalPick ? [finalPick] : [], max:1, accent:C.gold, highlight:true },
             ].map(round => (
-              <div key={round.label} style={{ marginBottom:14 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <div key={round.label} style={{ marginBottom:18 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
                   <div style={{
-                    fontFamily:"'League Spartan',sans-serif", fontSize:10,
+                    fontFamily:"'League Spartan',sans-serif", fontSize:11,
                     color:round.highlight ? C.gold : C.mutedLight,
                     fontWeight:700, letterSpacing:"0.12em", textTransform:"uppercase",
                   }}>{round.label}</div>
                   <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:9, color:C.mutedLight, letterSpacing:"0.1em" }}>{round.picks.length} / {round.max}</div>
                 </div>
                 {round.picks.length > 0 ? (
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(150px, 1fr))", gap:8 }}>
                     {round.picks.map(p => (
                       <div key={p.id} style={{
-                        display:"flex", alignItems:"center", gap:6,
-                        background:round.highlight ? "rgba(196,159,75,0.12)" : C.tealDim,
-                        border:`1px solid ${round.highlight ? C.gold : C.tealBorder}`,
-                        borderRadius:4, padding:"4px 9px",
+                        background:C.surface, border:`1px solid ${round.highlight ? C.gold : C.border}`,
+                        borderRadius:6, overflow:"hidden",
+                        boxShadow: round.highlight ? `0 0 16px rgba(196,159,75,0.15)` : "none",
                       }}>
-                        {p.flag && <img src={FLAG_URL(p.flag)} alt={p.team} style={{ width:14, height:10, objectFit:"cover", borderRadius:2 }} />}
-                        <span style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:round.highlight ? C.gold : C.white, fontWeight:600 }}>{p.team}</span>
+                        <div style={{
+                          padding:"5px 9px", borderBottom:`1px solid ${C.border}`,
+                          background:`linear-gradient(90deg,${C.greenDark},#050D08)`,
+                          display:"flex", alignItems:"center", gap:6,
+                        }}>
+                          <div style={{ width:3, height:11, background:round.accent, borderRadius:1, flexShrink:0 }} />
+                          <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:8, fontWeight:700, color:C.mutedLight, textTransform:"uppercase", letterSpacing:"0.1em" }}>
+                            Match {p.id}
+                          </span>
+                        </div>
+                        <div style={{
+                          padding:"8px 9px",
+                          background: round.highlight ? "rgba(196,159,75,0.1)" : "rgba(90,148,123,0.06)",
+                          display:"flex", alignItems:"center", gap:7,
+                        }}>
+                          <Flag team={p.team} size={16} />
+                          <span style={{
+                            fontFamily:"'Quicksand',sans-serif", fontSize:12, fontWeight:700,
+                            color:round.highlight ? C.gold : C.white, flex:1,
+                            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                          }}>{p.team}</span>
+                          <span style={{ fontSize:9, color:round.highlight ? C.gold : C.green, fontWeight:700 }}>✓</span>
+                        </div>
+                        {p.opponent && (
+                          <div style={{
+                            padding:"4px 9px", fontFamily:"'League Spartan',sans-serif", fontSize:8,
+                            color:C.mutedLight, letterSpacing:"0.04em",
+                            borderTop:`1px solid ${C.border}`,
+                          }}>over {teamAbbr(p.opponent)}</div>
+                        )}
                       </div>
                     ))}
                   </div>
