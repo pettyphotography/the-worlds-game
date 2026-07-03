@@ -34,6 +34,9 @@ const TEAM_FLAGS = {
   Argentina:"ar",Algeria:"dz",Austria:"at",Jordan:"jo",
   Portugal:"pt","Congo DR":"cd",Uzbekistan:"uz",Colombia:"co",
   England:"gb-eng",Croatia:"hr",Ghana:"gh",Panama:"pa",
+  // Aliases — the knockout bracket data (R32_MATCHES) uses these name variants
+  // for a few teams instead of the group-stage canonical name. Same flag either way.
+  USA:"us","DR Congo":"cd","Ivory Coast":"ci",
 };
 
 // Map API team names to our app team names
@@ -162,13 +165,19 @@ function migrateKnockoutPicks(picks) {
 // used for HARDCODED_RESULTS in the group stage. Cross-verified against multiple
 // independent sources (Wikipedia, FourFourTwo, NBC, ESPN) before being added.
 const HARDCODED_KO_RESULTS = {
-  73: { home:0, away:1, winner:"Canada" },             // South Africa 0-1 Canada
-  74: { home:1, away:1, winner:"Paraguay" },           // Germany 1-1 Paraguay (Paraguay won 4-3 on penalties)
-  75: { home:1, away:1, winner:"Morocco" },            // Netherlands 1-1 Morocco (Morocco won 3-2 on penalties)
-  76: { home:2, away:1, winner:"Brazil" },             // Brazil 2-1 Japan
-  77: { home:3, away:0, winner:"France" },             // France 3-0 Sweden
-  78: { home:1, away:2, winner:"Norway" },             // Ivory Coast 1-2 Norway
-  79: { home:2, away:0, winner:"Mexico" },             // Mexico 2-0 Ecuador
+  73: { home:0, away:1, winner:"Canada" },                                    // South Africa 0-1 Canada
+  74: { home:1, away:1, winner:"Paraguay", decidedBy:"pens" },                // Germany 1-1 Paraguay (Paraguay won 4-3 on penalties)
+  75: { home:1, away:1, winner:"Morocco", decidedBy:"pens" },                 // Netherlands 1-1 Morocco (Morocco won 3-2 on penalties)
+  76: { home:2, away:1, winner:"Brazil" },                                    // Brazil 2-1 Japan
+  77: { home:3, away:0, winner:"France" },                                    // France 3-0 Sweden
+  78: { home:1, away:2, winner:"Norway" },                                    // Ivory Coast 1-2 Norway
+  79: { home:2, away:0, winner:"Mexico" },                                    // Mexico 2-0 Ecuador
+  80: { home:2, away:1, winner:"England" },                                   // England 2-1 DR Congo (Kane brace, 75', 86')
+  81: { home:2, away:0, winner:"USA" },                                       // USA 2-0 Bosnia & Herzegovina
+  82: { home:3, away:2, winner:"Belgium", decidedBy:"aet" },                  // Belgium 3-2 Senegal (Tielemans, 120+5')
+  83: { home:2, away:1, winner:"Portugal" },                                  // Portugal 2-1 Croatia
+  84: { home:3, away:0, winner:"Spain" },                                     // Spain 3-0 Austria
+  85: { home:2, away:0, winner:"Switzerland" },                               // Switzerland 2-0 Algeria
 };
 
 // Official FIFA knockout bracket sourcing — which earlier match(es) feed into each
@@ -213,10 +222,23 @@ function parseApiKnockoutMatches(apiMatches) {
     .filter(m => m.home && m.away);
 }
 
+// A few teams have two name variants in play: R32_MATCHES uses one, the live API
+// (normalized through API_NAME_MAP) uses another. Canonicalize both sides before
+// comparing so matching never silently fails on a naming mismatch.
+const TEAM_NAME_CANONICAL = {
+  "USA": "United States",
+  "DR Congo": "Congo DR",
+  "Ivory Coast": "Cote d'Ivoire",
+};
+function canonicalTeamName(name) {
+  return TEAM_NAME_CANONICAL[name] || name;
+}
 function findKnockoutApiMatch(koMatches, teamA, teamB) {
-  return koMatches.find(m =>
-    (m.home === teamA && m.away === teamB) || (m.home === teamB && m.away === teamA)
-  ) || null;
+  const a = canonicalTeamName(teamA), b = canonicalTeamName(teamB);
+  return koMatches.find(m => {
+    const mh = canonicalTeamName(m.home), ma = canonicalTeamName(m.away);
+    return (mh === a && ma === b) || (mh === b && ma === a);
+  }) || null;
 }
 
 // Recursively resolves the REAL-WORLD result of a knockout match — not any user's
@@ -254,14 +276,14 @@ function resolveKnockoutMatch(matchId, koApiMatches) {
     return {
       home: hard.home, away: hard.away, teamA, teamB,
       winner: hard.winner, loser: hard.winner === teamA ? teamB : teamA,
-      status: "FINISHED",
+      status: "FINISHED", decidedBy: hard.decidedBy || null,
     };
   }
 
   // Fall back to live API data, matched purely by team-name pair.
   const live = findKnockoutApiMatch(koApiMatches, teamA, teamB);
   if (!live || live.homeScore === null || live.status === "SCHEDULED" || live.status === "TIMED") {
-    return { home:null, away:null, teamA, teamB, winner:null, loser:null, status: live?.status || "SCHEDULED" };
+    return { home:null, away:null, teamA, teamB, winner:null, loser:null, status: live?.status || "SCHEDULED", decidedBy:null };
   }
   const aScore = live.home === teamA ? live.homeScore : live.awayScore;
   const bScore = live.home === teamA ? live.awayScore : live.homeScore;
@@ -272,7 +294,7 @@ function resolveKnockoutMatch(matchId, koApiMatches) {
   return {
     home: aScore, away: bScore, teamA, teamB,
     winner, loser: winner ? (winner === teamA ? teamB : teamA) : null,
-    status: live.status,
+    status: live.status, decidedBy: null,
   };
 }
 
@@ -1390,10 +1412,17 @@ function OfficialKnockoutTab({ koApiMatches, knockoutPicks }) {
 
   const ptColors = { exact:C.exact, correct:C.correct, wrong:C.wrong };
 
-  const TeamLabel = ({ team, align }) => (
-    <span style={{ display:"flex",alignItems:"center",gap:6,fontSize:13,fontFamily:"'Quicksand',sans-serif",color:team?C.white:C.mutedLight,flex:1,justifyContent:align==="right"?"flex-end":"flex-start",fontWeight:600 }}>
+  const TeamLabel = ({ team, align, isWinner, isLoser }) => (
+    <span style={{
+      display:"flex",alignItems:"center",gap:6,fontSize:13,fontFamily:"'Quicksand',sans-serif",
+      color: isWinner ? C.gold : isLoser ? C.mutedLight : team?C.white:C.mutedLight,
+      fontWeight: isWinner ? 800 : 600,
+      flex:1,justifyContent:align==="right"?"flex-end":"flex-start",
+    }}>
       {align==="right" && (team ? team : "TBD")}
+      {isWinner && align==="right" && <span style={{ fontSize:11 }}>✓</span>}
       {team ? <Flag team={team} size={16} /> : <span style={{ fontSize:16 }}>🏳️</span>}
+      {isWinner && align!=="right" && <span style={{ fontSize:11 }}>✓</span>}
       {align!=="right" && (team ? team : "TBD")}
     </span>
   );
@@ -1401,6 +1430,8 @@ function OfficialKnockoutTab({ koApiMatches, knockoutPicks }) {
   const KOMatchCard = ({ r }) => {
     const pick = getKoPick(knockoutPicks, r.id);
     const result = pick && r.winner ? scoreKnockoutResult(pick, r) : null;
+    const isDraw = r.home !== null && r.home === r.away;
+    const decidedLabel = r.decidedBy === "pens" ? "Pens" : r.decidedBy === "aet" ? "AET" : isDraw && r.winner ? "Pens" : null;
     return (
       <div style={{ background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"12px 14px",display:"flex",alignItems:"center",gap:10 }}>
         <div style={{ flex:1 }}>
@@ -1408,14 +1439,16 @@ function OfficialKnockoutTab({ koApiMatches, knockoutPicks }) {
             {koRoundLabel(r.id)} · {koDateFor(r.id)}
           </div>
           <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-            <TeamLabel team={r.teamA} align="right" />
+            <TeamLabel team={r.teamA} align="right" isWinner={r.winner===r.teamA} isLoser={r.winner&&r.winner!==r.teamA} />
             <div style={{ textAlign:"center",minWidth:56 }}>
               <div style={{ fontSize:16,fontWeight:900,fontFamily:"'League Spartan',sans-serif",color:C.white }}>
                 {r.home !== null ? `${r.home} : ${r.away}` : "VS"}
               </div>
-              <div style={{ fontSize:9,color:C.mutedLight,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em",fontWeight:700,marginTop:2 }}>FT</div>
+              <div style={{ fontSize:9,color:decidedLabel?C.gold:C.mutedLight,fontFamily:"'League Spartan',sans-serif",letterSpacing:"0.08em",fontWeight:700,marginTop:2 }}>
+                {decidedLabel ? `FT (${decidedLabel})` : "FT"}
+              </div>
             </div>
-            <TeamLabel team={r.teamB} align="left" />
+            <TeamLabel team={r.teamB} align="left" isWinner={r.winner===r.teamB} isLoser={r.winner&&r.winner!==r.teamB} />
           </div>
         </div>
         {pick && pick.team && (
@@ -2160,7 +2193,7 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
 }
 
 // ── Your Tournament Stats — Personal Stats & Awards Hub ───────────────────────
-function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, setTab, koApiMatches }) {
+function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, koApiMatches, displayName, readOnly, setTab }) {
   const champCode = TEAM_FLAGS[champion];
   const stats = calcUserStats(scores, liveScores || {}, champion, knockoutPicks || {}, koApiMatches || []);
 
@@ -2247,7 +2280,7 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
             fontSize:"clamp(26px, 5vw, 38px)", fontWeight:900,
             color:C.white, textTransform:"uppercase",
             letterSpacing:"-0.01em", marginBottom:6,
-          }}>{userName ? `${userName}'s` : "Your"} Run So Far</div>
+          }}>{displayName ? `${displayName}'s` : "Your"} Run So Far</div>
 
           <p style={{
             fontFamily:"'Quicksand',sans-serif", fontSize:13, color:C.mutedLight,
@@ -2264,6 +2297,8 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
                 Backing {champion} to win it all
               </span>
             </div>
+          ) : readOnly ? (
+            <div style={{ marginTop:22, fontSize:12, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif" }}>No champion picked yet.</div>
           ) : (
             <button onClick={() => setTab && setTab("bracket")} style={{
               marginTop:22, background:C.green, border:"none", borderRadius:30,
@@ -2578,6 +2613,18 @@ function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, se
         See who's leading the competition overall on the Leaderboard tab.
       </div>
     </div>
+  );
+}
+
+// Thin wrapper — "Your Tournament Stats" is just the shared stats view rendered
+// for the signed-in user, in editable (non-read-only) mode.
+function ChampionTab({ champion, scores, liveScores, knockoutPicks, userName, setTab, koApiMatches }) {
+  return (
+    <TournamentStatsContent
+      champion={champion} scores={scores} liveScores={liveScores}
+      knockoutPicks={knockoutPicks} koApiMatches={koApiMatches}
+      displayName={userName} readOnly={false} setTab={setTab}
+    />
   );
 }
 
@@ -3190,8 +3237,6 @@ function PlayerProfileTab({ entry, liveScores, onBack, koApiMatches }) {
   const theirChampion = entry.champion || "";
   const theirKnockout = entry.knockoutPicks || {};
   const qualifyingThirds = getThirdPlaceQualifiers(theirScores, liveScores || {});
-  const stats = calcUserStats(theirScores, liveScores || {}, theirChampion, theirKnockout, koApiMatches || []);
-  const champCode = TEAM_FLAGS[theirChampion];
 
   return (
     <div className="fade-in">
@@ -3204,94 +3249,15 @@ function PlayerProfileTab({ entry, liveScores, onBack, koApiMatches }) {
         ‹ Back to Leaderboard
       </button>
 
-      {/* Hero */}
-      <div style={{
-        background:`linear-gradient(135deg, ${C.greenDark} 0%, #031A0E 100%)`,
-        border:`2px solid ${C.gold}`, borderRadius:10,
-        padding:"24px 20px", marginBottom:24, textAlign:"center",
-      }}>
-        <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:11,color:C.mutedLight,textTransform:"uppercase",letterSpacing:"0.14em",marginBottom:8 }}>
-          {entry.name}'s Predictions
-        </div>
-        {theirChampion ? (
-          <>
-            {champCode && <img src={flagSrcForSize(champCode, 60)} alt={theirChampion} style={{ width:80, height:60, objectFit:"cover", borderRadius:6, marginBottom:10, boxShadow:`0 0 20px rgba(196,159,75,0.3)` }} />}
-            <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.gold,textTransform:"uppercase",letterSpacing:"0.04em" }}>
-              {theirChampion} to lift it
-            </div>
-          </>
-        ) : (
-          <div style={{ fontSize:13,color:C.mutedLight,fontFamily:"'Quicksand',sans-serif" }}>No champion picked yet.</div>
-        )}
-      </div>
+      {/* Full "Your Tournament Stats" breakdown, rendered read-only for this player */}
+      <TournamentStatsContent
+        champion={theirChampion} scores={theirScores} liveScores={liveScores || {}}
+        knockoutPicks={theirKnockout} koApiMatches={koApiMatches || []}
+        displayName={entry.name} readOnly={true}
+      />
 
-      {/* Stats summary */}
-      <div className="balanced-grid" style={{ gap:10, marginBottom:24, "--cols": balancedColumns(4, 4) }}>
-        {[
-          { label:"Predictions", value:stats.totalPredictions },
-          { label:"Accuracy", value:`${stats.accuracy}%` },
-          { label:"Exact Scores", value:stats.exact },
-          { label:"Perfect Groups", value:stats.perfectGroupOrders },
-        ].map(s=>(
-          <div key={s.label} style={{ background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"14px 10px",textAlign:"center" }}>
-            <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:24,fontWeight:900,color:C.green }}>{s.value}</div>
-            <div style={{ fontSize:9,color:C.mutedLight,letterSpacing:"0.1em",textTransform:"uppercase",fontFamily:"'League Spartan',sans-serif",marginTop:4 }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Group performance breakdown */}
-      {(() => {
-        const safeLive = liveScores || {};
-        const groupData = Object.keys(GROUPS).map(gKey => {
-          let correct = 0, scored = 0;
-          GROUPS[gKey].matches.forEach((_,idx) => {
-            const key = `${gKey}-${idx}`;
-            const r = scoreResult(theirScores[key], safeLive[key], key);
-            if (r !== null) { scored++; if (r === "exact" || r === "correct") correct++; }
-          });
-          let orderResult = null;
-          try { orderResult = calcGroupOrderScore(gKey, theirScores, safeLive); } catch(e) {}
-          return { gKey, correct, scored, isPerfectOrder: orderResult?.isPerfect ?? false, correctSlots: orderResult?.correctSlots ?? 0 };
-        });
-        const anyScored = groupData.some(g => g.scored > 0);
-        if (!anyScored) return null;
-        return (
-          <>
-            <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.gold,fontWeight:700,marginBottom:12 }}>
-              Group Performance
-            </div>
-            <div className="balanced-grid" style={{ gap:8, marginBottom:24, "--cols": balancedColumns(12, 4) }}>
-              {groupData.map(({ gKey, correct, scored, isPerfectOrder, correctSlots }) => (
-                <div key={gKey} style={{
-                  background: isPerfectOrder ? `linear-gradient(135deg, rgba(196,159,75,0.1), ${C.surface})` : C.surface,
-                  border:`1px solid ${isPerfectOrder ? C.gold : C.border}`,
-                  borderRadius:8, padding:"12px 10px", textAlign:"center",
-                  position:"relative", opacity: scored === 0 ? 0.4 : 1,
-                }}>
-                  {isPerfectOrder && (
-                    <div style={{ position:"absolute", top:-7, left:"50%", transform:"translateX(-50%)", background:C.gold, color:"#000", fontSize:7, fontWeight:900, fontFamily:"'League Spartan',sans-serif", padding:"2px 6px", borderRadius:8, whiteSpace:"nowrap", textTransform:"uppercase" }}>★ Perfect</div>
-                  )}
-                  <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:14, fontWeight:900, color:isPerfectOrder ? C.gold : C.mutedLight, marginBottom:4 }}>Grp {gKey}</div>
-                  {scored > 0 ? (
-                    <>
-                      <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:18, fontWeight:900, color:correct === scored ? C.green : C.white }}>{correct}/{scored}</div>
-                      <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.08em", textTransform:"uppercase", marginTop:2 }}>
-                        {isPerfectOrder ? "✓ order" : correctSlots > 0 ? `${correctSlots}/4 order` : "matches"}
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ fontSize:9, color:C.mutedLight, fontFamily:"'Quicksand',sans-serif" }}>—</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </>
-        );
-      })()}
-
-      {/* Their group predictions */}
-      <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.gold,fontWeight:700,marginBottom:12 }}>
+      {/* Their group predictions — full standings tables, kept as its own section */}
+      <div style={{ fontFamily:"'League Spartan',sans-serif",fontSize:10,letterSpacing:"0.14em",textTransform:"uppercase",color:C.gold,fontWeight:700,margin:"28px 0 12px" }}>
         {entry.name}'s Group Predictions
       </div>
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(330px,1fr))",gap:12 }}>
