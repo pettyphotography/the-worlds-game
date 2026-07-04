@@ -2557,7 +2557,6 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
                 </div>
                 {round.picks.length > 0 ? (
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(150px, 1fr))", gap:8 }}>
-<<<<<<< HEAD
                     {round.picks.map(p => {
                       const real = resolveKnockoutMatch(p.id, koApiMatches || []);
                       const isDecided = !!(real && real.status === "FINISHED" && real.winner);
@@ -2570,13 +2569,6 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
                         borderRadius:6, overflow:"hidden",
                         boxShadow: isCorrect ? `0 0 16px rgba(196,159,75,0.15)` : "none",
                         opacity: isWrong ? 0.6 : 1,
-=======
-                    {round.picks.map(p => (
-                      <div key={p.id} style={{
-                        background:C.surface, border:`1px solid ${round.highlight ? C.gold : C.border}`,
-                        borderRadius:6, overflow:"hidden",
-                        boxShadow: round.highlight ? `0 0 16px rgba(196,159,75,0.15)` : "none",
->>>>>>> 72821bc92cdd996057728705f888438b41b40800
                       }}>
                         <div style={{
                           padding:"5px 9px", borderBottom:`1px solid ${C.border}`,
@@ -2590,17 +2582,12 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
                         </div>
                         <div style={{
                           padding:"8px 9px",
-<<<<<<< HEAD
                           background: isCorrect ? "rgba(196,159,75,0.1)" : isWrong ? "rgba(224,82,82,0.06)" : "rgba(90,148,123,0.06)",
-=======
-                          background: round.highlight ? "rgba(196,159,75,0.1)" : "rgba(90,148,123,0.06)",
->>>>>>> 72821bc92cdd996057728705f888438b41b40800
                           display:"flex", alignItems:"center", gap:7,
                         }}>
                           <Flag team={p.team} size={16} />
                           <span style={{
                             fontFamily:"'Quicksand',sans-serif", fontSize:12, fontWeight:700,
-<<<<<<< HEAD
                             color:isCorrect ? C.gold : isWrong ? C.mutedLight : C.white, flex:1,
                             overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
                             textDecoration: isWrong ? "line-through" : "none",
@@ -2617,14 +2604,6 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
                           }}>{teamAbbr(real.winner)} won</div>
                         )}
                         {!isWrong && p.opponent && (
-=======
-                            color:round.highlight ? C.gold : C.white, flex:1,
-                            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-                          }}>{p.team}</span>
-                          <span style={{ fontSize:9, color:round.highlight ? C.gold : C.green, fontWeight:700 }}>✓</span>
-                        </div>
-                        {p.opponent && (
->>>>>>> 72821bc92cdd996057728705f888438b41b40800
                           <div style={{
                             padding:"4px 9px", fontFamily:"'League Spartan',sans-serif", fontSize:8,
                             color:C.mutedLight, letterSpacing:"0.04em",
