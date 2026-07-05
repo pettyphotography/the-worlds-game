@@ -159,7 +159,14 @@ function migrateKnockoutPicks(picks) {
     const id = parseInt(idStr, 10);
     if (isNaN(id)) return;
     const pickTeam = typeof val === "string" ? val : val?.team;
-    if (id < 73 || id > 88) return; // R16+ — dropped, not recoverable
+    if (id < 73 || id > 88) {
+      // R16 and beyond — not affected by the old R32 renumbering bug, so these
+      // are passed through untouched. Do NOT drop them: this function runs on
+      // every load, and dropping here would silently delete real picks on
+      // every single app open, forever.
+      migrated[id] = val;
+      return;
+    }
     const newMatch = R32_MATCHES.find(m => m.id === id);
     const alreadyCorrect = newMatch && (pickTeam === newMatch.home || pickTeam === newMatch.away);
     if (alreadyCorrect) {
