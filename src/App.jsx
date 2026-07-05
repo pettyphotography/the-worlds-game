@@ -204,6 +204,8 @@ const HARDCODED_KO_RESULTS = {
   83: { home:2, away:1, winner:"Portugal" },                                  // Portugal 2-1 Croatia
   84: { home:3, away:0, winner:"Spain" },                                     // Spain 3-0 Austria
   85: { home:2, away:0, winner:"Switzerland" },                               // Switzerland 2-0 Algeria
+  89: { home:0, away:1, winner:"France" },                                    // France 1-0 Paraguay (Mbappé pen, 70')
+  90: { home:0, away:3, winner:"Morocco" },                                   // Morocco 3-0 Canada
 };
 
 // Official FIFA knockout bracket sourcing — which earlier match(es) feed into each
@@ -1608,18 +1610,10 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
     return getPickTeam(matchId);
   };
 
-  // TEMPORARY: re-entry window for Pete only, matches 89/90 only. His original
-  // picks for these two were wiped by the migration bug before the games
-  // locked. This override lets him re-enter what he actually picked. Remove
-  // this block once he confirms he's done — it should not stay in permanently.
-  const REENTRY_OVERRIDE_USER = "Pete";
-  const REENTRY_OVERRIDE_MATCHES = [89, 90];
-
   // A match is locked from editing once it's actually live or finished in the real
   // world — same principle as the group stage locking, just driven by the real
   // knockout resolver instead of the group liveScores object.
   const isKoMatchLocked = (matchId) => {
-    if (userName === REENTRY_OVERRIDE_USER && REENTRY_OVERRIDE_MATCHES.includes(matchId)) return false;
     const real = resolveKnockoutMatch(matchId, koApiMatches || []);
     return !!(real && (real.status === "IN_PLAY" || real.status === "PAUSED" || real.status === "FINISHED"));
   };
