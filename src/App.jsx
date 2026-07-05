@@ -1588,7 +1588,7 @@ function OfficialKnockoutTab({ koApiMatches, knockoutPicks }) {
 }
 
 // ── Bracket Tab — Full Knockout Through Final ─────────────────────────────────
-function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPick, koApiMatches }) {
+function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPick, koApiMatches, userName }) {
   // Bracket is now unlocked — R32 fixtures confirmed
 
   // Determine team that won an R32 match based on user pick — handles both old string
@@ -1608,10 +1608,18 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
     return getPickTeam(matchId);
   };
 
+  // TEMPORARY: re-entry window for Pete only, matches 89/90 only. His original
+  // picks for these two were wiped by the migration bug before the games
+  // locked. This override lets him re-enter what he actually picked. Remove
+  // this block once he confirms he's done — it should not stay in permanently.
+  const REENTRY_OVERRIDE_USER = "Pete";
+  const REENTRY_OVERRIDE_MATCHES = [89, 90];
+
   // A match is locked from editing once it's actually live or finished in the real
   // world — same principle as the group stage locking, just driven by the real
   // knockout resolver instead of the group liveScores object.
   const isKoMatchLocked = (matchId) => {
+    if (userName === REENTRY_OVERRIDE_USER && REENTRY_OVERRIDE_MATCHES.includes(matchId)) return false;
     const real = resolveKnockoutMatch(matchId, koApiMatches || []);
     return !!(real && (real.status === "IN_PLAY" || real.status === "PAUSED" || real.status === "FINISHED"));
   };
@@ -3587,7 +3595,7 @@ export default function App() {
 
           {tab==="actual"&&<ActualTab liveScores={liveScores} scores={scores} lastUpdated={lastUpdated} />}
 
-          {tab==="bracket"&&<BracketTab scores={scores} liveScores={liveScores} champion={champion} knockoutPicks={knockoutPicks} koApiMatches={liveKnockoutMatches} onKnockoutPick={(id, team, home, away)=>{
+          {tab==="bracket"&&<BracketTab scores={scores} liveScores={liveScores} champion={champion} knockoutPicks={knockoutPicks} koApiMatches={liveKnockoutMatches} userName={userName} onKnockoutPick={(id, team, home, away)=>{
             const val = (home !== undefined && away !== undefined)
               ? { team, home, away }
               : { team, home: "", away: "" };
