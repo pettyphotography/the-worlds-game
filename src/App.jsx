@@ -1616,10 +1616,17 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
     return getPickTeam(matchId);
   };
 
+  // TEMPORARY: re-entry window for Pete only, match 97 only (France vs Morocco).
+  // Same pattern as the earlier 89/90 override — remove this block once he
+  // confirms he's done re-entering. Should not stay in permanently.
+  const REENTRY_OVERRIDE_USER = "Pete";
+  const REENTRY_OVERRIDE_MATCHES = [97];
+
   // A match is locked from editing once it's actually live or finished in the real
   // world — same principle as the group stage locking, just driven by the real
   // knockout resolver instead of the group liveScores object.
   const isKoMatchLocked = (matchId) => {
+    if (userName === REENTRY_OVERRIDE_USER && REENTRY_OVERRIDE_MATCHES.includes(matchId)) return false;
     const real = resolveKnockoutMatch(matchId, koApiMatches || []);
     return !!(real && (real.status === "IN_PLAY" || real.status === "PAUSED" || real.status === "FINISHED"));
   };
