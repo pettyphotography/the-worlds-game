@@ -159,7 +159,14 @@ function migrateKnockoutPicks(picks) {
     const id = parseInt(idStr, 10);
     if (isNaN(id)) return;
     const pickTeam = typeof val === "string" ? val : val?.team;
-    if (id < 73 || id > 88) return; // R16+ — dropped, not recoverable
+    if (id < 73 || id > 88) {
+      // R16 and beyond — not affected by the old R32 renumbering bug, so these
+      // are passed through untouched. Do NOT drop them: this function runs on
+      // every load, and dropping here would silently delete real picks on
+      // every single app open, forever.
+      migrated[id] = val;
+      return;
+    }
     const newMatch = R32_MATCHES.find(m => m.id === id);
     const alreadyCorrect = newMatch && (pickTeam === newMatch.home || pickTeam === newMatch.away);
     if (alreadyCorrect) {
@@ -197,6 +204,14 @@ const HARDCODED_KO_RESULTS = {
   83: { home:2, away:1, winner:"Portugal" },                                  // Portugal 2-1 Croatia
   84: { home:3, away:0, winner:"Spain" },                                     // Spain 3-0 Austria
   85: { home:2, away:0, winner:"Switzerland" },                               // Switzerland 2-0 Algeria
+  89: { home:0, away:1, winner:"France" },                                    // France 1-0 Paraguay (Mbappé pen, 70')
+  90: { home:0, away:3, winner:"Morocco" },                                   // Morocco 3-0 Canada
+  91: { home:1, away:2, winner:"Norway" },                                    // Brazil 1-2 Norway (Haaland brace)
+  92: { home:2, away:3, winner:"England" },                                   // Mexico 2-3 England (Bellingham x2, Kane)
+  93: { home:0, away:1, winner:"Spain" },                                     // Portugal 0-1 Spain
+  94: { home:1, away:4, winner:"Belgium" },                                   // USA 1-4 Belgium (De Ketelaere x2)
+  95: { home:3, away:2, winner:"Argentina" },                                 // Argentina 3-2 Egypt (comeback from 2-0 down)
+  96: { home:0, away:0, winner:"Switzerland", decidedBy:"pens" },             // Switzerland 0-0 Colombia (Switzerland won 4-3 on pens)
 };
 
 // Official FIFA knockout bracket sourcing — which earlier match(es) feed into each
@@ -1581,7 +1596,7 @@ function OfficialKnockoutTab({ koApiMatches, knockoutPicks }) {
 }
 
 // ── Bracket Tab — Full Knockout Through Final ─────────────────────────────────
-function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPick, koApiMatches }) {
+function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPick, koApiMatches, userName }) {
   // Bracket is now unlocked — R32 fixtures confirmed
 
   // Determine team that won an R32 match based on user pick — handles both old string
@@ -1591,7 +1606,15 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
     if (!p) return null;
     return typeof p === "string" ? p : p.team || null;
   };
-  const getWinnerOfMatch = getPickTeam;
+  // The team that actually advances to feed into the NEXT round's matchup.
+  // Once a match is really finished, this is the real winner — not whatever
+  // the user guessed. Falls back to the user's own pick only if the real
+  // result isn't known yet (shouldn't normally happen given round locking).
+  const getWinnerOfMatch = (matchId) => {
+    const real = resolveKnockoutMatch(matchId, koApiMatches || []);
+    if (real && real.status === "FINISHED" && real.winner) return real.winner;
+    return getPickTeam(matchId);
+  };
 
   // A match is locked from editing once it's actually live or finished in the real
   // world — same principle as the group stage locking, just driven by the real
@@ -1755,16 +1778,38 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
             </div>
           )}
 
-          {homeTeam && awayTeam && locked && (pickHome !== "" || pickTeam) && (
-            <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, textAlign:"center" }}>
-              <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>
-                Your locked prediction
+          {homeTeam && awayTeam && locked && (pickHome !== "" || pickTeam) && (() => {
+            const real = resolveKnockoutMatch(matchId, koApiMatches || []);
+            const isDecided = !!(real && real.status === "FINISHED" && real.winner);
+            const isCorrect = isDecided && real.winner === pickTeam;
+            const isWrong = isDecided && pickTeam && !isCorrect;
+            return (
+              <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, textAlign:"center" }}>
+                <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>
+                  Your locked prediction
+                </div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                  <span style={{
+                    fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900,
+                    color: isCorrect ? C.gold : isWrong ? C.mutedLight : C.mutedLight,
+                    textDecoration: isWrong ? "line-through" : "none",
+                  }}>
+                    {pickHome !== "" ? `${pickHome} : ${pickAway}` : pickTeam}
+                  </span>
+                  {isDecided && (
+                    <span style={{ fontSize:12, fontWeight:900, color: isCorrect ? C.gold : C.wrong }}>
+                      {isCorrect ? "✓" : "✗"}
+                    </span>
+                  )}
+                </div>
+                {isWrong && real.winner && (
+                  <div style={{ fontSize:9, color:C.wrong, fontFamily:"'League Spartan',sans-serif", marginTop:3 }}>
+                    {real.winner} won
+                  </div>
+                )}
               </div>
-              <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:C.mutedLight }}>
-                {pickHome !== "" ? `${pickHome} : ${pickAway}` : pickTeam}
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     );
@@ -1992,12 +2037,22 @@ function BracketTab({ scores, liveScores, champion, knockoutPicks, onKnockoutPic
                     ))}
                   </div>
                 )}
-                {locked && (pickHome !== "" || pick) && (
-                  <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, textAlign:"center" }}>
-                    <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Your locked prediction</div>
-                    <div style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:C.mutedLight }}>{pickHome !== "" ? `${pickHome} : ${pickAway}` : pick}</div>
-                  </div>
-                )}
+                {locked && (pickHome !== "" || pick) && (() => {
+                  const real = resolveKnockoutMatch(m.id, koApiMatches || []);
+                  const isDecided = !!(real && real.status === "FINISHED" && real.winner);
+                  const isCorrect = isDecided && real.winner === pick;
+                  const isWrong = isDecided && pick && !isCorrect;
+                  return (
+                    <div style={{ marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10, textAlign:"center" }}>
+                      <div style={{ fontSize:8, color:C.mutedLight, fontFamily:"'League Spartan',sans-serif", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Your locked prediction</div>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                        <span style={{ fontFamily:"'League Spartan',sans-serif", fontSize:16, fontWeight:900, color:isCorrect?C.gold:C.mutedLight, textDecoration:isWrong?"line-through":"none" }}>{pickHome !== "" ? `${pickHome} : ${pickAway}` : pick}</span>
+                        {isDecided && <span style={{ fontSize:12, fontWeight:900, color:isCorrect?C.gold:C.wrong }}>{isCorrect?"✓":"✗"}</span>}
+                      </div>
+                      {isWrong && real.winner && <div style={{ fontSize:9, color:C.wrong, fontFamily:"'League Spartan',sans-serif", marginTop:3 }}>{real.winner} won</div>}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -2549,11 +2604,18 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
                 </div>
                 {round.picks.length > 0 ? (
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(150px, 1fr))", gap:8 }}>
-                    {round.picks.map(p => (
+                    {round.picks.map(p => {
+                      const real = resolveKnockoutMatch(p.id, koApiMatches || []);
+                      const isDecided = !!(real && real.status === "FINISHED" && real.winner);
+                      const isCorrect = isDecided && real.winner === p.team;
+                      const isWrong = isDecided && !isCorrect;
+                      const cardBorder = isCorrect ? C.gold : isWrong ? "rgba(224,82,82,0.4)" : (round.highlight ? C.gold : C.border);
+                      return (
                       <div key={p.id} style={{
-                        background:C.surface, border:`1px solid ${round.highlight ? C.gold : C.border}`,
+                        background:C.surface, border:`1px solid ${cardBorder}`,
                         borderRadius:6, overflow:"hidden",
-                        boxShadow: round.highlight ? `0 0 16px rgba(196,159,75,0.15)` : "none",
+                        boxShadow: isCorrect ? `0 0 16px rgba(196,159,75,0.15)` : "none",
+                        opacity: isWrong ? 0.6 : 1,
                       }}>
                         <div style={{
                           padding:"5px 9px", borderBottom:`1px solid ${C.border}`,
@@ -2567,18 +2629,28 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
                         </div>
                         <div style={{
                           padding:"8px 9px",
-                          background: round.highlight ? "rgba(196,159,75,0.1)" : "rgba(90,148,123,0.06)",
+                          background: isCorrect ? "rgba(196,159,75,0.1)" : isWrong ? "rgba(224,82,82,0.06)" : "rgba(90,148,123,0.06)",
                           display:"flex", alignItems:"center", gap:7,
                         }}>
                           <Flag team={p.team} size={16} />
                           <span style={{
                             fontFamily:"'Quicksand',sans-serif", fontSize:12, fontWeight:700,
-                            color:round.highlight ? C.gold : C.white, flex:1,
+                            color:isCorrect ? C.gold : isWrong ? C.mutedLight : C.white, flex:1,
                             overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                            textDecoration: isWrong ? "line-through" : "none",
                           }}>{p.team}</span>
-                          <span style={{ fontSize:9, color:round.highlight ? C.gold : C.green, fontWeight:700 }}>✓</span>
+                          <span style={{ fontSize:10, fontWeight:900, color:isCorrect ? C.gold : isWrong ? C.wrong : C.mutedLight }}>
+                            {isDecided ? (isCorrect ? "✓" : "✗") : "—"}
+                          </span>
                         </div>
-                        {p.opponent && (
+                        {isWrong && real.winner && (
+                          <div style={{
+                            padding:"4px 9px", fontFamily:"'League Spartan',sans-serif", fontSize:8,
+                            color:C.wrong, letterSpacing:"0.04em",
+                            borderTop:`1px solid ${C.border}`,
+                          }}>{teamAbbr(real.winner)} won</div>
+                        )}
+                        {!isWrong && p.opponent && (
                           <div style={{
                             padding:"4px 9px", fontFamily:"'League Spartan',sans-serif", fontSize:8,
                             color:C.mutedLight, letterSpacing:"0.04em",
@@ -2586,7 +2658,8 @@ function TournamentStatsContent({ champion, scores, liveScores, knockoutPicks, k
                           }}>over {teamAbbr(p.opponent)}</div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div style={{ fontFamily:"'Quicksand',sans-serif", fontSize:11, color:C.mutedLight, fontStyle:"italic" }}>No picks yet</div>
@@ -3554,7 +3627,7 @@ export default function App() {
 
           {tab==="actual"&&<ActualTab liveScores={liveScores} scores={scores} lastUpdated={lastUpdated} />}
 
-          {tab==="bracket"&&<BracketTab scores={scores} liveScores={liveScores} champion={champion} knockoutPicks={knockoutPicks} koApiMatches={liveKnockoutMatches} onKnockoutPick={(id, team, home, away)=>{
+          {tab==="bracket"&&<BracketTab scores={scores} liveScores={liveScores} champion={champion} knockoutPicks={knockoutPicks} koApiMatches={liveKnockoutMatches} userName={userName} onKnockoutPick={(id, team, home, away)=>{
             const val = (home !== undefined && away !== undefined)
               ? { team, home, away }
               : { team, home: "", away: "" };
